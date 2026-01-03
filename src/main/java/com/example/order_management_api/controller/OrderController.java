@@ -60,4 +60,14 @@ public class OrderController {
                 order.createdAt()
         );
     }
+
+    @PostMapping("/{id}/pay")
+    public OrderResponse pay(@PathVariable UUID id) {
+        return toResponse(orderService.payOrder(id));
+    }
+
+    @PostMapping("/{id}/cancel")
+    public OrderResponse cancel(@PathVariable UUID id) {
+        return toResponse(orderService.cancelOrder(id));
+    }
 }

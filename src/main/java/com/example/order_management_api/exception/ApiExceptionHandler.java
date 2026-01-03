@@ -33,4 +33,11 @@ public class ApiExceptionHandler {
         // np. "customerEmail: must be a well-formed email address"
         return fieldError.getField() + ": " + fieldError.getDefaultMessage();
     }
+
+    @ExceptionHandler(InvalidOrderStatusTransitionException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidTransition(InvalidOrderStatusTransitionException ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse(400, ex.getMessage()));
+    }
 }

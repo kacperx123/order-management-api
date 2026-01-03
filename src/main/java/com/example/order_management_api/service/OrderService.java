@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.example.order_management_api.exception.InvalidOrderStatusTransitionException;
 import org.springframework.stereotype.Service;
 
 import com.example.order_management_api.api.CreateOrderItemRequest;
@@ -39,6 +40,42 @@ public class OrderService {
         );
 
         return orderStore.save(order);
+    }
+
+    public Order payOrder(UUID id) {
+        Order order = getOrder(id);
+
+        if (order.status() != OrderStatus.CREATED) {
+            throw new InvalidOrderStatusTransitionException(order.status(), OrderStatus.PAID);
+        }
+
+        Order updated = new Order(
+                order.id(),
+                order.customerEmail(),
+                OrderStatus.PAID,
+                order.items(),
+                order.createdAt()
+        );
+
+        return orderStore.save(updated);
+    }
+
+    public Order cancelOrder(UUID id) {
+        Order order = getOrder(id);
+
+        if (order.status() != OrderStatus.CREATED) {
+            throw new InvalidOrderStatusTransitionException(order.status(), OrderStatus.CANCELLED);
+        }
+
+        Order updated = new Order(
+                order.id(),
+                order.customerEmail(),
+                OrderStatus.CANCELLED,
+                order.items(),
+                order.createdAt()
+        );
+
+        return orderStore.save(updated);
     }
 
     public Order getOrder(UUID id) {
