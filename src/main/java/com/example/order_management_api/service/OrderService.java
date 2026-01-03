@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.example.order_management_api.exception.InvalidOrderStatusTransitionException;
+import com.example.order_management_api.repository.OrderRepository;
 import org.springframework.stereotype.Service;
 
 import com.example.order_management_api.api.CreateOrderItemRequest;
@@ -13,84 +14,62 @@ import com.example.order_management_api.exception.OrderNotFoundException;
 import com.example.order_management_api.model.Order;
 import com.example.order_management_api.model.OrderItem;
 import com.example.order_management_api.model.OrderStatus;
-import com.example.order_management_api.store.OrderStore;
 
 @Service
 public class OrderService {
 
-    private final OrderStore orderStore;
+    private final OrderRepository orderRepository;
 
-    public OrderService(OrderStore orderStore) {
-        this.orderStore = orderStore;
+    public OrderService(OrderRepository orderRepository) {
+        this.orderRepository = orderRepository;
     }
 
     public Order createOrder(CreateOrderRequest request) {
         UUID id = UUID.randomUUID();
 
-        List<OrderItem> items = request.items().stream()
-                .map(this::toOrderItem)
-                .toList();
-
         Order order = new Order(
                 id,
                 request.customerEmail(),
                 OrderStatus.CREATED,
-                items,
                 Instant.now()
         );
 
-        return orderStore.save(order);
-    }
+        request.items().forEach(i -> order.addItem(new OrderItem(i.productName(), i.quantity())));
 
-    public Order payOrder(UUID id) {
-        Order order = getOrder(id);
-
-        if (order.status() != OrderStatus.CREATED) {
-            throw new InvalidOrderStatusTransitionException(order.status(), OrderStatus.PAID);
-        }
-
-        Order updated = new Order(
-                order.id(),
-                order.customerEmail(),
-                OrderStatus.PAID,
-                order.items(),
-                order.createdAt()
-        );
-
-        return orderStore.save(updated);
-    }
-
-    public Order cancelOrder(UUID id) {
-        Order order = getOrder(id);
-
-        if (order.status() != OrderStatus.CREATED) {
-            throw new InvalidOrderStatusTransitionException(order.status(), OrderStatus.CANCELLED);
-        }
-
-        Order updated = new Order(
-                order.id(),
-                order.customerEmail(),
-                OrderStatus.CANCELLED,
-                order.items(),
-                order.createdAt()
-        );
-
-        return orderStore.save(updated);
+        return orderRepository.save(order);
     }
 
     public Order getOrder(UUID id) {
-        return orderStore.findById(id)
+        return orderRepository.findById(id)
                 .orElseThrow(() -> new OrderNotFoundException(id));
     }
 
     public List<Order> listOrders(OrderStatus status) {
         if (status == null) {
-            return orderStore.findAll();
+            return orderRepository.findAll();
         }
-        return orderStore.findByStatus(status);
+        return orderRepository.findByStatus(status);
     }
 
-    private OrderItem toOrderItem(CreateOrderItemRequest item) {
-        return new OrderItem(item.productName(), item.quantity());
+    public Order payOrder(UUID id) {
+        Order order = getOrder(id);
+
+        if (order.getStatus() != OrderStatus.CREATED) {
+            throw new InvalidOrderStatusTransitionException(order.getStatus(), OrderStatus.PAID);
+        }
+
+        order.setStatus(OrderStatus.PAID);
+        return orderRepository.save(order);
+    }
+
+    public Order cancelOrder(UUID id) {
+        Order order = getOrder(id);
+
+        if (order.getStatus() != OrderStatus.CREATED) {
+            throw new InvalidOrderStatusTransitionException(order.getStatus(), OrderStatus.CANCELLED);
+        }
+
+        order.setStatus(OrderStatus.CANCELLED);
+        return orderRepository.save(order);
     }
 }

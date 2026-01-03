@@ -30,7 +30,7 @@ public class OrderController {
     public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
         Order created = orderService.createOrder(request);
         return ResponseEntity
-                .created(URI.create("/orders/" + created.id()))
+                .created(URI.create("/orders/" + created.getId()))
                 .body(toResponse(created));
     }
 
@@ -48,16 +48,16 @@ public class OrderController {
     }
 
     private OrderResponse toResponse(Order order) {
-        List<OrderItemResponse> items = order.items().stream()
-                .map(i -> new OrderItemResponse(i.productName(), i.quantity()))
+        List<OrderItemResponse> items = order.getItems().stream()
+                .map(i -> new OrderItemResponse(i.getProductName(), i.getQuantity()))
                 .toList();
 
         return new OrderResponse(
-                order.id(),
-                order.customerEmail(),
-                order.status(),
+                order.getId(),
+                order.getCustomerEmail(),
+                order.getStatus(),
                 items,
-                order.createdAt()
+                order.getCreatedAt()
         );
     }
 
