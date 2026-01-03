@@ -96,4 +96,70 @@ class OrderControllerIntegrationTest {
         assertThat(response.length).isGreaterThan(0);
         assertThat(response[0].status().name()).isEqualTo("CREATED");
     }
+
+    private UUID createOrderAndGetId() {
+        CreateOrderRequest request = new CreateOrderRequest(
+                "test@example.com",
+                List.of(new CreateOrderItemRequest("Milk", 2))
+        );
+
+        OrderResponse created = client()
+                .post()
+                .uri("/orders")
+                .body(request)
+                .retrieve()
+                .body(OrderResponse.class);
+
+        assertThat(created).isNotNull();
+        return created.id();
+    }
+
+    @Test
+    void shouldPayCreatedOrder() {
+        UUID id = createOrderAndGetId();
+
+        OrderResponse paid = client()
+                .post()
+                .uri("/orders/" + id + "/pay")
+                .retrieve()
+                .body(OrderResponse.class);
+
+        assertThat(paid).isNotNull();
+        assertThat(paid.status().name()).isEqualTo("PAID");
+    }
+
+    @Test
+    void shouldCancelCreatedOrder() {
+        UUID id = createOrderAndGetId();
+
+        OrderResponse cancelled = client()
+                .post()
+                .uri("/orders/" + id + "/cancel")
+                .retrieve()
+                .body(OrderResponse.class);
+
+        assertThat(cancelled).isNotNull();
+        assertThat(cancelled.status().name()).isEqualTo("CANCELLED");
+    }
+
+    @Test
+    void shouldReturn400WhenTransitionIsInvalid() {
+        UUID id = createOrderAndGetId();
+
+        // pay first
+        client().post().uri("/orders/" + id + "/pay").retrieve().toBodilessEntity();
+
+        // then cancel should be invalid (PAID -> CANCELLED)
+        ErrorResponse error = client()
+                .post()
+                .uri("/orders/" + id + "/cancel")
+                .exchange((req, res) -> {
+                    assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    return res.bodyTo(ErrorResponse.class);
+                });
+
+        assertThat(error).isNotNull();
+        assertThat(error.status()).isEqualTo(400);
+        assertThat(error.message()).contains("Invalid status transition");
+    }
 }
