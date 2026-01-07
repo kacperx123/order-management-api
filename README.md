@@ -11,10 +11,12 @@ and perform basic order status transitions.
 - Java 25
 - Spring Boot 4.0
 - Spring Web (WebMVC)
+- Spring Data JPA
 - Jakarta Validation
 - Gradle
 - JUnit 5 (integration tests)
-- In-memory persistence (ConcurrentHashMap)
+- Testcontainers (PostgreSQL)
+- Docker / Docker Compose (runtime PostgreSQL)
 
 ---
 
@@ -140,7 +142,37 @@ Validation errors → 400
 
 Invalid status transitions → 400
 
-### Running the Application
+---
+
+## Persistence
+
+
+### PostgreSQL
+
+This project also includes a PostgreSQL-based persistence variant implemented on a separate branch.
+
+#### Runtime
+
+PostgreSQL running via Docker Compose
+
+Spring Data JPA with Hibernate
+
+#### Tests
+
+Integration tests use Testcontainers
+
+PostgreSQL container started automatically for tests
+
+No embedded or in-memory databases used in tests
+
+---
+
+## Running the Application
+
+Docker desktop is needed to be running.
+
+Run Docker
+docker compose up -d
 
 Build
 ./gradlew clean build
@@ -169,18 +201,19 @@ Status transitions
 Error handling
 
 ### Run tests with:
+Docker desktop is needed to be running.
 
-./gradlew test
+Run Docker
+docker compose up -d
+
+Run tests
+./gradlew clean test
 
 ---
 
 ## Notes
 
-Persistence is currently in-memory for simplicity.
-
 No authentication or security mechanisms are implemented.
 
 The project follows a simple layered architecture:
-Controller → Service → Store
-
-A PostgreSQL + Testcontainers persistence variant is planned on a separate branch.
+Controller → Service → Repository
