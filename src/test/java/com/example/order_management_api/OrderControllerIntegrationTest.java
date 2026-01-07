@@ -19,8 +19,7 @@ import com.example.order_management_api.exception.ErrorResponse;
 
 import java.util.List;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class OrderControllerIntegrationTest {
+class OrderControllerIntegrationTest extends PostgresTestBase {
 
     @LocalServerPort
     int port;
