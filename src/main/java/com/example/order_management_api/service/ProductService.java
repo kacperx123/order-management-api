@@ -42,7 +42,7 @@ public class ProductService {
                 0
         );
 
-        inventoryRepository.save(inventory);
+        inventoryRepository.saveAndFlush(inventory);
 
         return toResponse(saved, inventory);
     }
