@@ -4,6 +4,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.example.order_management_api.event.model.OrderCancelledEvent;
+import com.example.order_management_api.event.model.OrderCreatedEvent;
+import com.example.order_management_api.event.model.OrderPaidEvent;
+import com.example.order_management_api.event.publisher.DomainEventPublisher;
 import com.example.order_management_api.exception.InvalidOrderStatusTransitionException;
 import com.example.order_management_api.repository.OrderRepository;
 import org.springframework.stereotype.Service;
@@ -18,9 +22,12 @@ import com.example.order_management_api.model.OrderStatus;
 @Service
 public class OrderService {
 
+    private final DomainEventPublisher domainEventPublisher;
+
     private final OrderRepository orderRepository;
 
-    public OrderService(OrderRepository orderRepository) {
+    public OrderService(DomainEventPublisher domainEventPublisher, OrderRepository orderRepository) {
+        this.domainEventPublisher = domainEventPublisher;
         this.orderRepository = orderRepository;
     }
 
@@ -35,6 +42,8 @@ public class OrderService {
         );
 
         request.items().forEach(i -> order.addItem(new OrderItem(i.productName(), i.quantity())));
+
+        domainEventPublisher.publish(OrderCreatedEvent.now(order.getId(), order.getCustomerEmail()));
 
         return orderRepository.save(order);
     }
@@ -59,6 +68,9 @@ public class OrderService {
         }
 
         order.setStatus(OrderStatus.PAID);
+
+        domainEventPublisher.publish(OrderPaidEvent.now(order.getId()));
+
         return orderRepository.save(order);
     }
 
@@ -70,6 +82,9 @@ public class OrderService {
         }
 
         order.setStatus(OrderStatus.CANCELLED);
+
+        domainEventPublisher.publish(OrderCancelledEvent.now(order.getId()));
+
         return orderRepository.save(order);
     }
 }
