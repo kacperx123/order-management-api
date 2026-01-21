@@ -40,4 +40,18 @@ public class ApiExceptionHandler {
                 .status(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse(400, ex.getMessage()));
     }
+
+    @ExceptionHandler(ProductNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleProductNotFound(ProductNotFoundException ex) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse(404, ex.getMessage()));
+    }
+
+    @ExceptionHandler(InsufficientStockException.class)
+    public ResponseEntity<ErrorResponse> handleInsufficientStock(InsufficientStockException ex) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(409, ex.getMessage()));
+    }
 }
