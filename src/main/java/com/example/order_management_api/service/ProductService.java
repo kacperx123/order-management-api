@@ -4,6 +4,9 @@ import com.example.order_management_api.api.CreateProductRequest;
 import com.example.order_management_api.api.ProductResponse;
 import com.example.order_management_api.api.UpdateProductRequest;
 import com.example.order_management_api.api.UpdateStockRequest;
+import com.example.order_management_api.event.model.ProductCreatedEvent;
+import com.example.order_management_api.event.model.StockAdjustedEvent;
+import com.example.order_management_api.event.publisher.DomainEventPublisher;
 import com.example.order_management_api.exception.InsufficientStockException;
 import com.example.order_management_api.exception.ProductNotFoundException;
 import com.example.order_management_api.model.Inventory;
@@ -21,6 +24,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ProductService {
 
+    private final DomainEventPublisher domainEventPublisher;
     private final ProductRepository productRepository;
     private final InventoryRepository inventoryRepository;
 
@@ -43,6 +47,9 @@ public class ProductService {
         );
 
         inventoryRepository.saveAndFlush(inventory);
+
+        domainEventPublisher.publish(ProductCreatedEvent.now(saved.getId(), saved.getName(), saved.getPrice()));
+        domainEventPublisher.publish(StockAdjustedEvent.now(saved.getId(), 0, inventory.getAvailable(), inventory.getReserved()));
 
         return toResponse(saved, inventory);
     }
@@ -96,6 +103,8 @@ public class ProductService {
         Inventory inventory = inventoryRepository.findByProduct_Id(productId)
                 .orElseThrow(() -> new ProductNotFoundException(productId));
 
+        int prev = inventory.getAvailable();
+
         if (request.delta() != null) {
             int newAvailable = inventory.getAvailable() + request.delta();
             if (newAvailable < 0) {
@@ -110,6 +119,11 @@ public class ProductService {
         }
 
         Product product = inventory.getProduct();
+
+        domainEventPublisher.publish(
+                StockAdjustedEvent.now(productId, prev, inventory.getAvailable(), inventory.getReserved())
+        );
+
         return toResponse(product, inventory);
     }
 

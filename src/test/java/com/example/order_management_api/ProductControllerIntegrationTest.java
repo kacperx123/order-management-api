@@ -4,9 +4,17 @@ import com.example.order_management_api.api.CreateProductRequest;
 import com.example.order_management_api.api.ProductResponse;
 import com.example.order_management_api.api.UpdateProductRequest;
 import com.example.order_management_api.api.UpdateStockRequest;
+import com.example.order_management_api.event.model.ProductCreatedEvent;
+import com.example.order_management_api.event.model.StockAdjustedEvent;
+import com.example.order_management_api.event.publisher.DomainEventPublisher;
 import com.example.order_management_api.exception.ErrorResponse;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
@@ -22,6 +30,9 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
     int port;
 
     private RestClient restClient;
+
+    @Autowired
+    TestDomainEventPublisher recordingPublisher;
 
     private RestClient client() {
         if (restClient == null) {
@@ -51,6 +62,12 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
         assertThat(created.id()).isNotNull();
         return created.id();
     }
+
+    @BeforeEach
+    void beforeEach() {
+        recordingPublisher.clear();
+    }
+
 
     @Test
     void shouldCreateProduct() {
@@ -274,7 +291,91 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
 
         assertThat(error).isNotNull();
         assertThat(error.status()).isEqualTo(400);
-        // message zależny od tego, które pole pierwsze złapie FieldError
         assertThat(error.message()).contains(":");
     }
+
+    @Test
+    void shouldPublishEventsWhenProductIsCreated() {
+        CreateProductRequest request = new CreateProductRequest(
+                "Milk",
+                BigDecimal.valueOf(3.99),
+                10,
+                true
+        );
+
+        ProductResponse created = client()
+                .post()
+                .uri("/products")
+                .body(request)
+                .retrieve()
+                .body(ProductResponse.class);
+
+        assertThat(created).isNotNull();
+
+        assertThat(recordingPublisher.getEvents()).hasSize(2);
+
+        assertThat(recordingPublisher.getEvents())
+                .anySatisfy(e -> {
+                    assertThat(e).isInstanceOf(ProductCreatedEvent.class);
+                    ProductCreatedEvent ev = (ProductCreatedEvent) e;
+                    assertThat(ev.productId()).isEqualTo(created.id());
+                    assertThat(ev.name()).isEqualTo("Milk");
+                    assertThat(ev.price()).isEqualTo(BigDecimal.valueOf(3.99));
+                });
+
+        assertThat(recordingPublisher.getEvents())
+                .anySatisfy(e -> {
+                    assertThat(e).isInstanceOf(StockAdjustedEvent.class);
+                    StockAdjustedEvent ev = (StockAdjustedEvent) e;
+                    assertThat(ev.productId()).isEqualTo(created.id());
+                    assertThat(ev.previousAvailable()).isEqualTo(0);
+                    assertThat(ev.newAvailable()).isEqualTo(10);
+                    assertThat(ev.reserved()).isEqualTo(0);
+                });
+    }
+
+    @Test
+    void shouldPublishStockAdjustedEventWhenStockIsUpdated() {
+        UUID id = createProductAndGetId("Milk", BigDecimal.valueOf(3.99), 10);
+        recordingPublisher.clear();
+
+        UpdateStockRequest request = new UpdateStockRequest(-3, null);
+
+        ProductResponse updated = client()
+                .post()
+                .uri("/products/" + id + "/stock")
+                .body(request)
+                .retrieve()
+                .body(ProductResponse.class);
+
+        assertThat(updated).isNotNull();
+        assertThat(updated.available()).isEqualTo(7);
+
+        assertThat(recordingPublisher.getEvents()).hasSize(1);
+        assertThat(recordingPublisher.getEvents().getFirst()).isInstanceOf(StockAdjustedEvent.class);
+
+        StockAdjustedEvent ev = (StockAdjustedEvent) recordingPublisher.getEvents().getFirst();
+        assertThat(ev.productId()).isEqualTo(id);
+        assertThat(ev.previousAvailable()).isEqualTo(10);
+        assertThat(ev.newAvailable()).isEqualTo(7);
+        assertThat(ev.reserved()).isEqualTo(0);
+    }
+
+    @TestConfiguration
+    static class DomainEventsTestConfig {
+
+        @Bean
+        TestDomainEventPublisher recordingDomainEventPublisher() {
+            return new TestDomainEventPublisher();
+        }
+
+        @Bean
+        @Primary
+        DomainEventPublisher domainEventPublisher(TestDomainEventPublisher recording) {
+            return recording;
+        }
+
+
+    }
 }
+
