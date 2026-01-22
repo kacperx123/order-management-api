@@ -1,8 +1,6 @@
 package com.example.order_management_api;
 
-import com.example.order_management_api.api.CreateOrderItemRequest;
-import com.example.order_management_api.api.CreateOrderRequest;
-import com.example.order_management_api.api.OrderResponse;
+import com.example.order_management_api.api.*;
 import com.example.order_management_api.event.model.DomainEvent;
 import com.example.order_management_api.event.model.OrderCancelledEvent;
 import com.example.order_management_api.event.model.OrderCreatedEvent;
@@ -21,6 +19,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -46,6 +45,25 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         return restClient;
     }
 
+    private UUID createProductAndGetId(String name, double price, int stock) {
+        CreateProductRequest req = new CreateProductRequest(
+                name,
+                BigDecimal.valueOf(price),
+                stock,
+                true
+        );
+
+        ProductResponse created = client()
+                .post()
+                .uri("/products")
+                .body(req)
+                .retrieve()
+                .body(ProductResponse.class);
+
+        assertThat(created).isNotNull();
+        return created.id();
+    }
+
     @BeforeEach
     void beforeEach() {
         recordingPublisher.clear();
@@ -54,9 +72,11 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
     @Test
     void shouldCreateOrder() {
         // given
+        UUID productId = createProductAndGetId("Milk", 3.99, 100);
+
         CreateOrderRequest request = new CreateOrderRequest(
                 "test@example.com",
-                List.of(new CreateOrderItemRequest("Milk", 2))
+                List.of(new CreateOrderItemRequest(productId, 2))
         );
 
         // when
@@ -77,9 +97,11 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
     @Test
     void shouldPublishOrderCreatedEventWhenOrderIsCreated() {
         // given
+        UUID productId = createProductAndGetId("Milk", 3.99, 100);
+
         CreateOrderRequest request = new CreateOrderRequest(
                 "test@example.com",
-                List.of(new CreateOrderItemRequest("Milk", 2))
+                List.of(new CreateOrderItemRequest(productId, 2))
         );
 
         // when
@@ -123,9 +145,11 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
     @Test
     void shouldFilterOrdersByStatus() {
         // given
+        UUID productId = createProductAndGetId("Bread", 3.99, 100);
+
         CreateOrderRequest request = new CreateOrderRequest(
-                "filter@test.com",
-                List.of(new CreateOrderItemRequest("Bread", 1))
+                "test@example.com",
+                List.of(new CreateOrderItemRequest(productId, 2))
         );
 
         client().post().uri("/orders").body(request).retrieve().toBodilessEntity();
@@ -143,30 +167,14 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(response[0].status().name()).isEqualTo("CREATED");
     }
 
-    private UUID createOrderAndGetId() {
-        CreateOrderRequest request = new CreateOrderRequest(
-                "test@example.com",
-                List.of(new CreateOrderItemRequest("Milk", 2))
-        );
-
-        OrderResponse created = client()
-                .post()
-                .uri("/orders")
-                .body(request)
-                .retrieve()
-                .body(OrderResponse.class);
-
-        assertThat(created).isNotNull();
-        return created.id();
-    }
 
     @Test
     void shouldPayCreatedOrder() {
-        UUID id = createOrderAndGetId();
+        UUID productId = createProductAndGetId("Milk", 3.99, 100);
 
         OrderResponse paid = client()
                 .post()
-                .uri("/orders/" + id + "/pay")
+                .uri("/orders/" + productId + "/pay")
                 .retrieve()
                 .body(OrderResponse.class);
 
@@ -176,12 +184,12 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
 
     @Test
     void shouldPublishOrderPaidEventWhenOrderIsPaid() {
-        UUID id = createOrderAndGetId();
-        recordingPublisher.clear(); // zostawiamy tylko event z pay
+        UUID productId = createProductAndGetId("Milk", 3.12, 20);
+        recordingPublisher.clear();
 
         OrderResponse paid = client()
                 .post()
-                .uri("/orders/" + id + "/pay")
+                .uri("/orders/" + productId + "/pay")
                 .retrieve()
                 .body(OrderResponse.class);
 
@@ -193,17 +201,17 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(events.getFirst()).isInstanceOf(OrderPaidEvent.class);
 
         OrderPaidEvent e = (OrderPaidEvent) events.getFirst();
-        assertThat(e.orderId()).isEqualTo(id);
+        assertThat(e.orderId()).isEqualTo(productId);
         assertThat(e.type()).isEqualTo("OrderPaid");
     }
 
     @Test
     void shouldCancelCreatedOrder() {
-        UUID id = createOrderAndGetId();
+        UUID productId = createProductAndGetId("Milk", 3.12, 20);
 
         OrderResponse cancelled = client()
                 .post()
-                .uri("/orders/" + id + "/cancel")
+                .uri("/orders/" + productId + "/cancel")
                 .retrieve()
                 .body(OrderResponse.class);
 
@@ -213,12 +221,12 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
 
     @Test
     void shouldPublishOrderCancelledEventWhenOrderIsCancelled() {
-        UUID id = createOrderAndGetId();
-        recordingPublisher.clear(); // zostawiamy tylko event z cancel
+        UUID productId = createProductAndGetId("Milk", 3.12, 20);
+        recordingPublisher.clear();
 
         OrderResponse cancelled = client()
                 .post()
-                .uri("/orders/" + id + "/cancel")
+                .uri("/orders/" + productId + "/cancel")
                 .retrieve()
                 .body(OrderResponse.class);
 
@@ -230,24 +238,24 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(events.getFirst()).isInstanceOf(OrderCancelledEvent.class);
 
         OrderCancelledEvent e = (OrderCancelledEvent) events.getFirst();
-        assertThat(e.orderId()).isEqualTo(id);
+        assertThat(e.orderId()).isEqualTo(productId);
         assertThat(e.type()).isEqualTo("OrderCancelled");
     }
 
     @Test
     void shouldReturn400WhenTransitionIsInvalid() {
-        UUID id = createOrderAndGetId();
+        UUID productId = createProductAndGetId("Milk", 3.12, 20);
 
         // pay first
-        client().post().uri("/orders/" + id + "/pay").retrieve().toBodilessEntity();
+        client().post().uri("/orders/" + productId + "/pay").retrieve().toBodilessEntity();
 
-        // interesuje nas tylko to, czy cancel NIE publikuje eventu
+        // Checking if cancel is making event public
         recordingPublisher.clear();
 
         // then cancel should be invalid (PAID -> CANCELLED)
         ErrorResponse error = client()
                 .post()
-                .uri("/orders/" + id + "/cancel")
+                .uri("/orders/" + productId + "/cancel")
                 .exchange((req, res) -> {
                     assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
                     return res.bodyTo(ErrorResponse.class);
@@ -257,7 +265,7 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(error.status()).isEqualTo(400);
         assertThat(error.message()).contains("Invalid status transition");
 
-        // po błędnym transition nie powinno dojść nic nowego
+        // after wrong transition there should be nothing.
         assertThat(recordingPublisher.getEvents()).isEmpty();
     }
 
@@ -272,7 +280,6 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         @Bean
         @Primary
         DomainEventPublisher domainEventPublisher(TestDomainEventPublisher recording) {
-            // podmieniamy produkcyjny publisher na nagrywający
             return recording;
         }
     }

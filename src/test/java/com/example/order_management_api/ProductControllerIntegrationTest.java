@@ -63,6 +63,7 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
         return created.id();
     }
 
+
     @BeforeEach
     void beforeEach() {
         recordingPublisher.clear();
