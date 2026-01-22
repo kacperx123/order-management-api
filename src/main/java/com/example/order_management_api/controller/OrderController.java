@@ -49,7 +49,7 @@ public class OrderController {
 
     private OrderResponse toResponse(Order order) {
         List<OrderItemResponse> items = order.getItems().stream()
-                .map(i -> new OrderItemResponse(i.getProductName(), i.getQuantity()))
+                .map(i -> new OrderItemResponse(i.getProductId(),i.getProductNameSnapshot(), i.getQuantity(), i.getUnitPriceAtPurchase()))
                 .toList();
 
         return new OrderResponse(

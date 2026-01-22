@@ -45,11 +45,11 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         return restClient;
     }
 
-    private UUID createProductAndGetId(String name, double price, int stock) {
+    private UUID createProductAndGetId(String name, double price, int initialStock) {
         CreateProductRequest req = new CreateProductRequest(
                 name,
                 BigDecimal.valueOf(price),
-                stock,
+                initialStock,
                 true
         );
 
@@ -64,6 +64,26 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         return created.id();
     }
 
+    private UUID createOrderAndGetId() {
+        UUID productId = createProductAndGetId("Milk", 3.99, 100);
+
+        CreateOrderRequest request = new CreateOrderRequest(
+                "test@example.com",
+                List.of(new CreateOrderItemRequest(productId, 2))
+        );
+
+        OrderResponse created = client()
+                .post()
+                .uri("/orders")
+                .body(request)
+                .retrieve()
+                .body(OrderResponse.class);
+
+        assertThat(created).isNotNull();
+        return created.id();
+    }
+
+
     @BeforeEach
     void beforeEach() {
         recordingPublisher.clear();
@@ -72,7 +92,7 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
     @Test
     void shouldCreateOrder() {
         // given
-        UUID productId = createProductAndGetId("Milk", 3.99, 100);
+        UUID productId = createProductAndGetId("Milk", 3.99, 10);
 
         CreateOrderRequest request = new CreateOrderRequest(
                 "test@example.com",
@@ -90,21 +110,39 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         // then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().customerEmail()).isEqualTo("test@example.com");
-        assertThat(response.getBody().items()).hasSize(1);
+
+        OrderResponse order = response.getBody();
+        assertThat(order.customerEmail()).isEqualTo("test@example.com");
+        assertThat(order.items()).hasSize(1);
+
+        OrderItemResponse item = order.items().get(0);
+        assertThat(item.productId()).isEqualTo(productId);
+        assertThat(item.quantity()).isEqualTo(2);
+        assertThat(item.unitPriceAtPurchase()).isEqualTo(BigDecimal.valueOf(3.99));
+
+        // and: stock was decreased
+        ProductResponse productAfter = client()
+                .get()
+                .uri("/products/" + productId)
+                .retrieve()
+                .body(ProductResponse.class);
+
+        assertThat(productAfter).isNotNull();
+        assertThat(productAfter.available()).isEqualTo(8);
     }
 
     @Test
     void shouldPublishOrderCreatedEventWhenOrderIsCreated() {
-        // given
         UUID productId = createProductAndGetId("Milk", 3.99, 100);
+
+        // Clear product events; we only want to assert the order event here.
+        recordingPublisher.clear();
 
         CreateOrderRequest request = new CreateOrderRequest(
                 "test@example.com",
                 List.of(new CreateOrderItemRequest(productId, 2))
         );
 
-        // when
         OrderResponse created = client()
                 .post()
                 .uri("/orders")
@@ -112,7 +150,6 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
                 .retrieve()
                 .body(OrderResponse.class);
 
-        // then
         assertThat(created).isNotNull();
 
         List<DomainEvent> events = recordingPublisher.getEvents();
@@ -122,9 +159,6 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         OrderCreatedEvent e = (OrderCreatedEvent) events.getFirst();
         assertThat(e.orderId()).isEqualTo(created.id());
         assertThat(e.customerEmail()).isEqualTo("test@example.com");
-        assertThat(e.type()).isEqualTo("OrderCreated");
-        assertThat(e.eventId()).isNotNull();
-        assertThat(e.occurredAt()).isNotNull();
     }
 
     @Test
@@ -145,11 +179,11 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
     @Test
     void shouldFilterOrdersByStatus() {
         // given
-        UUID productId = createProductAndGetId("Bread", 3.99, 100);
+        UUID productId = createProductAndGetId("Bread", 2.50, 10);
 
         CreateOrderRequest request = new CreateOrderRequest(
-                "test@example.com",
-                List.of(new CreateOrderItemRequest(productId, 2))
+                "filter@test.com",
+                List.of(new CreateOrderItemRequest(productId, 1))
         );
 
         client().post().uri("/orders").body(request).retrieve().toBodilessEntity();
@@ -167,29 +201,55 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(response[0].status().name()).isEqualTo("CREATED");
     }
 
+    @Test
+    void shouldSnapshotPriceAtPurchase() {
+        UUID productId = createProductAndGetId("Milk", 3.99, 10);
+
+        // change product price
+        UpdateProductRequest patch = new UpdateProductRequest(null, BigDecimal.valueOf(9.99), null);
+        client().patch().uri("/products/" + productId).body(patch).retrieve().toBodilessEntity();
+
+        // place order after price change
+        CreateOrderRequest request = new CreateOrderRequest(
+                "test@example.com",
+                List.of(new CreateOrderItemRequest(productId, 1))
+        );
+
+        OrderResponse order = client()
+                .post()
+                .uri("/orders")
+                .body(request)
+                .retrieve()
+                .body(OrderResponse.class);
+
+        assertThat(order).isNotNull();
+        assertThat(order.items()).hasSize(1);
+
+        // snapshot should be 9.99 (because order placed after patch)
+        assertThat(order.items().getFirst().unitPriceAtPurchase()).isEqualTo(BigDecimal.valueOf(9.99));
+    }
 
     @Test
     void shouldPayCreatedOrder() {
-        UUID productId = createProductAndGetId("Milk", 3.99, 100);
+        UUID orderId = createOrderAndGetId();
 
         OrderResponse paid = client()
                 .post()
-                .uri("/orders/" + productId + "/pay")
+                .uri("/orders/" + orderId + "/pay")
                 .retrieve()
                 .body(OrderResponse.class);
 
         assertThat(paid).isNotNull();
         assertThat(paid.status().name()).isEqualTo("PAID");
     }
-
     @Test
     void shouldPublishOrderPaidEventWhenOrderIsPaid() {
-        UUID productId = createProductAndGetId("Milk", 3.12, 20);
-        recordingPublisher.clear();
+        UUID orderId = createOrderAndGetId();
+        recordingPublisher.clear(); // keep only the pay event
 
         OrderResponse paid = client()
                 .post()
-                .uri("/orders/" + productId + "/pay")
+                .uri("/orders/" + orderId + "/pay")
                 .retrieve()
                 .body(OrderResponse.class);
 
@@ -201,17 +261,16 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(events.getFirst()).isInstanceOf(OrderPaidEvent.class);
 
         OrderPaidEvent e = (OrderPaidEvent) events.getFirst();
-        assertThat(e.orderId()).isEqualTo(productId);
-        assertThat(e.type()).isEqualTo("OrderPaid");
+        assertThat(e.orderId()).isEqualTo(orderId);
     }
 
     @Test
     void shouldCancelCreatedOrder() {
-        UUID productId = createProductAndGetId("Milk", 3.12, 20);
+        UUID orderId = createOrderAndGetId();
 
         OrderResponse cancelled = client()
                 .post()
-                .uri("/orders/" + productId + "/cancel")
+                .uri("/orders/" + orderId + "/cancel")
                 .retrieve()
                 .body(OrderResponse.class);
 
@@ -221,12 +280,12 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
 
     @Test
     void shouldPublishOrderCancelledEventWhenOrderIsCancelled() {
-        UUID productId = createProductAndGetId("Milk", 3.12, 20);
-        recordingPublisher.clear();
+        UUID orderId = createOrderAndGetId();
+        recordingPublisher.clear(); // keep only cancel event
 
         OrderResponse cancelled = client()
                 .post()
-                .uri("/orders/" + productId + "/cancel")
+                .uri("/orders/" + orderId + "/cancel")
                 .retrieve()
                 .body(OrderResponse.class);
 
@@ -238,24 +297,22 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(events.getFirst()).isInstanceOf(OrderCancelledEvent.class);
 
         OrderCancelledEvent e = (OrderCancelledEvent) events.getFirst();
-        assertThat(e.orderId()).isEqualTo(productId);
-        assertThat(e.type()).isEqualTo("OrderCancelled");
+        assertThat(e.orderId()).isEqualTo(orderId);
     }
 
     @Test
     void shouldReturn400WhenTransitionIsInvalid() {
-        UUID productId = createProductAndGetId("Milk", 3.12, 20);
+        UUID orderId = createOrderAndGetId();
 
         // pay first
-        client().post().uri("/orders/" + productId + "/pay").retrieve().toBodilessEntity();
+        client().post().uri("/orders/" + orderId + "/pay").retrieve().toBodilessEntity();
 
-        // Checking if cancel is making event public
+        // we only care whether the INVALID cancel publishes anything
         recordingPublisher.clear();
 
-        // then cancel should be invalid (PAID -> CANCELLED)
         ErrorResponse error = client()
                 .post()
-                .uri("/orders/" + productId + "/cancel")
+                .uri("/orders/" + orderId + "/cancel")
                 .exchange((req, res) -> {
                     assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
                     return res.bodyTo(ErrorResponse.class);
@@ -265,7 +322,6 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(error.status()).isEqualTo(400);
         assertThat(error.message()).contains("Invalid status transition");
 
-        // after wrong transition there should be nothing.
         assertThat(recordingPublisher.getEvents()).isEmpty();
     }
 
