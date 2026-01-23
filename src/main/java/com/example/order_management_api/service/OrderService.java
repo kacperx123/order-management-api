@@ -17,6 +17,7 @@ import com.example.order_management_api.model.Product;
 import com.example.order_management_api.repository.InventoryRepository;
 import com.example.order_management_api.repository.OrderRepository;
 import com.example.order_management_api.repository.ProductRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +31,7 @@ import com.example.order_management_api.api.CreateOrderRequest;
 @Service
 public class OrderService {
 
+    private final long placeOrderDelayMs;
     private final DomainEventPublisher domainEventPublisher;
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
@@ -39,12 +41,14 @@ public class OrderService {
             DomainEventPublisher domainEventPublisher,
             OrderRepository orderRepository,
             ProductRepository productRepository,
-            InventoryRepository inventoryRepository
+            InventoryRepository inventoryRepository,
+            @Value("${app.order.place.delay-ms:0}") long placeOrderDelayMs
     ) {
         this.domainEventPublisher = domainEventPublisher;
         this.orderRepository = orderRepository;
         this.productRepository = productRepository;
         this.inventoryRepository = inventoryRepository;
+        this.placeOrderDelayMs = placeOrderDelayMs;
     }
 
     @Transactional
@@ -79,6 +83,14 @@ public class OrderService {
 
             // Decrease stock in the same transaction as order creation.
             inventory.setAvailable(available - quantity);
+
+            if (placeOrderDelayMs > 0) {
+                try {
+                    Thread.sleep(placeOrderDelayMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
 
             OrderItem orderItem = new OrderItem(
                     productId,

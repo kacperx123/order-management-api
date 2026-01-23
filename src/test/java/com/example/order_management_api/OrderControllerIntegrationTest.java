@@ -325,6 +325,97 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(recordingPublisher.getEvents()).isEmpty();
     }
 
+    @Test
+    void shouldReturn409WhenProductIsOutOfStock() {
+        // given
+        UUID productId = createProductAndGetId("Milk", 3.99, 1);
+
+        CreateOrderRequest request = new CreateOrderRequest(
+                "test@example.com",
+                List.of(new CreateOrderItemRequest(productId, 2))
+        );
+
+        // when
+        ErrorResponse error = client()
+                .post()
+                .uri("/orders")
+                .body(request)
+                .exchange((req, res) -> {
+                    assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+                    return res.bodyTo(ErrorResponse.class);
+                });
+
+        // then
+        assertThat(error).isNotNull();
+        assertThat(error.status()).isEqualTo(409);
+        assertThat(error.message()).contains("Out of stock");
+    }
+
+    @Test
+    void shouldReturn409WhenProductIsInactive() {
+        // given
+        CreateProductRequest req = new CreateProductRequest(
+                "Milk",
+                BigDecimal.valueOf(3.99),
+                10,
+                false // inactive
+        );
+
+        ProductResponse product = client()
+                .post()
+                .uri("/products")
+                .body(req)
+                .retrieve()
+                .body(ProductResponse.class);
+
+        assertThat(product).isNotNull();
+
+        CreateOrderRequest orderRequest = new CreateOrderRequest(
+                "test@example.com",
+                List.of(new CreateOrderItemRequest(product.id(), 1))
+        );
+
+        // when
+        ErrorResponse error = client()
+                .post()
+                .uri("/orders")
+                .body(orderRequest)
+                .exchange((req2, res) -> {
+                    assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+                    return res.bodyTo(ErrorResponse.class);
+                });
+
+        // then
+        assertThat(error).isNotNull();
+        assertThat(error.status()).isEqualTo(409);
+        assertThat(error.message()).contains("inactive");
+    }
+
+    @Test
+    void shouldNotDecreaseStockWhenOrderFails() {
+        UUID productId = createProductAndGetId("Milk", 3.99, 1);
+
+        CreateOrderRequest request = new CreateOrderRequest(
+                "test@example.com",
+                List.of(new CreateOrderItemRequest(productId, 5))
+        );
+
+        client()
+                .post()
+                .uri("/orders")
+                .body(request)
+                .exchange((req, res) -> res.bodyTo(ErrorResponse.class));
+
+        ProductResponse productAfter = client()
+                .get()
+                .uri("/products/" + productId)
+                .retrieve()
+                .body(ProductResponse.class);
+
+        assertThat(productAfter).isNotNull();
+        assertThat(productAfter.available()).isEqualTo(1);
+    }
+
     @TestConfiguration
     static class DomainEventsTestConfig {
 
