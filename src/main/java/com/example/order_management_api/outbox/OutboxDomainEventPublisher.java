@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.util.UUID;
 
 @Component
@@ -68,6 +69,8 @@ public class OutboxDomainEventPublisher implements DomainEventPublisher {
         } catch (JsonProcessingException ex) {
             // Fail fast: an event that cannot be serialized should not be silently dropped.
             throw new IllegalStateException("Failed to serialize domain event: " + event.getClass().getName(), ex);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 }

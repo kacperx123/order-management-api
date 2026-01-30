@@ -45,5 +45,6 @@ public class OutboxEvent {
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
+    @Setter
     private Instant publishedAt;
 }
