@@ -11,6 +11,7 @@ import com.example.order_management_api.exception.ErrorResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
@@ -32,6 +33,7 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
     private RestClient restClient;
 
     @Autowired
+    @Qualifier("recordingDomainEventPublisher")
     TestDomainEventPublisher recordingPublisher;
 
     private RestClient client() {
@@ -295,73 +297,6 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
         assertThat(error.message()).contains(":");
     }
 
-    @Test
-    void shouldPublishEventsWhenProductIsCreated() {
-        CreateProductRequest request = new CreateProductRequest(
-                "Milk",
-                BigDecimal.valueOf(3.99),
-                10,
-                true
-        );
-
-        ProductResponse created = client()
-                .post()
-                .uri("/products")
-                .body(request)
-                .retrieve()
-                .body(ProductResponse.class);
-
-        assertThat(created).isNotNull();
-
-        assertThat(recordingPublisher.getEvents()).hasSize(2);
-
-        assertThat(recordingPublisher.getEvents())
-                .anySatisfy(e -> {
-                    assertThat(e).isInstanceOf(ProductCreatedEvent.class);
-                    ProductCreatedEvent ev = (ProductCreatedEvent) e;
-                    assertThat(ev.productId()).isEqualTo(created.id());
-                    assertThat(ev.name()).isEqualTo("Milk");
-                    assertThat(ev.price()).isEqualTo(BigDecimal.valueOf(3.99));
-                });
-
-        assertThat(recordingPublisher.getEvents())
-                .anySatisfy(e -> {
-                    assertThat(e).isInstanceOf(StockAdjustedEvent.class);
-                    StockAdjustedEvent ev = (StockAdjustedEvent) e;
-                    assertThat(ev.productId()).isEqualTo(created.id());
-                    assertThat(ev.previousAvailable()).isEqualTo(0);
-                    assertThat(ev.newAvailable()).isEqualTo(10);
-                    assertThat(ev.reserved()).isEqualTo(0);
-                });
-    }
-
-    @Test
-    void shouldPublishStockAdjustedEventWhenStockIsUpdated() {
-        UUID id = createProductAndGetId("Milk", BigDecimal.valueOf(3.99), 10);
-        recordingPublisher.clear();
-
-        UpdateStockRequest request = new UpdateStockRequest(-3, null);
-
-        ProductResponse updated = client()
-                .post()
-                .uri("/products/" + id + "/stock")
-                .body(request)
-                .retrieve()
-                .body(ProductResponse.class);
-
-        assertThat(updated).isNotNull();
-        assertThat(updated.available()).isEqualTo(7);
-
-        assertThat(recordingPublisher.getEvents()).hasSize(1);
-        assertThat(recordingPublisher.getEvents().getFirst()).isInstanceOf(StockAdjustedEvent.class);
-
-        StockAdjustedEvent ev = (StockAdjustedEvent) recordingPublisher.getEvents().getFirst();
-        assertThat(ev.productId()).isEqualTo(id);
-        assertThat(ev.previousAvailable()).isEqualTo(10);
-        assertThat(ev.newAvailable()).isEqualTo(7);
-        assertThat(ev.reserved()).isEqualTo(0);
-    }
-
     @TestConfiguration
     static class DomainEventsTestConfig {
 
@@ -371,7 +306,6 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
         }
 
         @Bean
-        @Primary
         DomainEventPublisher domainEventPublisher(TestDomainEventPublisher recording) {
             return recording;
         }

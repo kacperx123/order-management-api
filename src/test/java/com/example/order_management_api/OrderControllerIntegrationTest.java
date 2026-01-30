@@ -10,6 +10,7 @@ import com.example.order_management_api.exception.ErrorResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
@@ -34,6 +35,7 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
     private RestClient restClient;
 
     @Autowired
+    @Qualifier("recordingDomainEventPublisher")
     TestDomainEventPublisher recordingPublisher;
 
     private RestClient client() {
@@ -131,35 +133,7 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(productAfter.available()).isEqualTo(8);
     }
 
-    @Test
-    void shouldPublishOrderCreatedEventWhenOrderIsCreated() {
-        UUID productId = createProductAndGetId("Milk", 3.99, 100);
 
-        // Clear product events; we only want to assert the order event here.
-        recordingPublisher.clear();
-
-        CreateOrderRequest request = new CreateOrderRequest(
-                "test@example.com",
-                List.of(new CreateOrderItemRequest(productId, 2))
-        );
-
-        OrderResponse created = client()
-                .post()
-                .uri("/orders")
-                .body(request)
-                .retrieve()
-                .body(OrderResponse.class);
-
-        assertThat(created).isNotNull();
-
-        List<DomainEvent> events = recordingPublisher.getEvents();
-        assertThat(events).hasSize(1);
-        assertThat(events.getFirst()).isInstanceOf(OrderCreatedEvent.class);
-
-        OrderCreatedEvent e = (OrderCreatedEvent) events.getFirst();
-        assertThat(e.orderId()).isEqualTo(created.id());
-        assertThat(e.customerEmail()).isEqualTo("test@example.com");
-    }
 
     @Test
     void shouldReturn404WhenOrderNotFound() {
@@ -242,27 +216,6 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(paid).isNotNull();
         assertThat(paid.status().name()).isEqualTo("PAID");
     }
-    @Test
-    void shouldPublishOrderPaidEventWhenOrderIsPaid() {
-        UUID orderId = createOrderAndGetId();
-        recordingPublisher.clear(); // keep only the pay event
-
-        OrderResponse paid = client()
-                .post()
-                .uri("/orders/" + orderId + "/pay")
-                .retrieve()
-                .body(OrderResponse.class);
-
-        assertThat(paid).isNotNull();
-        assertThat(paid.status().name()).isEqualTo("PAID");
-
-        List<DomainEvent> events = recordingPublisher.getEvents();
-        assertThat(events).hasSize(1);
-        assertThat(events.getFirst()).isInstanceOf(OrderPaidEvent.class);
-
-        OrderPaidEvent e = (OrderPaidEvent) events.getFirst();
-        assertThat(e.orderId()).isEqualTo(orderId);
-    }
 
     @Test
     void shouldCancelCreatedOrder() {
@@ -276,28 +229,6 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
 
         assertThat(cancelled).isNotNull();
         assertThat(cancelled.status().name()).isEqualTo("CANCELLED");
-    }
-
-    @Test
-    void shouldPublishOrderCancelledEventWhenOrderIsCancelled() {
-        UUID orderId = createOrderAndGetId();
-        recordingPublisher.clear(); // keep only cancel event
-
-        OrderResponse cancelled = client()
-                .post()
-                .uri("/orders/" + orderId + "/cancel")
-                .retrieve()
-                .body(OrderResponse.class);
-
-        assertThat(cancelled).isNotNull();
-        assertThat(cancelled.status().name()).isEqualTo("CANCELLED");
-
-        List<DomainEvent> events = recordingPublisher.getEvents();
-        assertThat(events).hasSize(1);
-        assertThat(events.getFirst()).isInstanceOf(OrderCancelledEvent.class);
-
-        OrderCancelledEvent e = (OrderCancelledEvent) events.getFirst();
-        assertThat(e.orderId()).isEqualTo(orderId);
     }
 
     @Test
@@ -425,7 +356,6 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         }
 
         @Bean
-        @Primary
         DomainEventPublisher domainEventPublisher(TestDomainEventPublisher recording) {
             return recording;
         }

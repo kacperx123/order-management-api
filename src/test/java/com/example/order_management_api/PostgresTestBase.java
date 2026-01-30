@@ -25,6 +25,11 @@ public abstract class PostgresTestBase {
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
         registry.add("spring.jpa.show-sql", () -> "false");
+
+        registry.add("app.outbox.publisher.enabled", () -> "false");
+        registry.add("app.kafka.consumer.enabled", () -> "false");
+        registry.add("app.kafka.producer.enabled", () -> "false");
     }
+
 }
 

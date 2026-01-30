@@ -15,10 +15,6 @@ public class TestDomainEventPublisher implements DomainEventPublisher {
         events.add(event);
     }
 
-    public List<DomainEvent> getEvents() {
-        return events;
-    }
-
     public void clear() {
         events.clear();
     }

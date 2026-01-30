@@ -3,6 +3,7 @@ package com.example.order_management_api.outbox;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -11,6 +12,11 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 
+@ConditionalOnProperty(
+        name = "app.outbox.publisher.enabled",
+        havingValue = "true",
+        matchIfMissing = true
+)
 @Component
 @RequiredArgsConstructor
 public class OutboxKafkaPublisherJob {
@@ -19,7 +25,6 @@ public class OutboxKafkaPublisherJob {
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final OutboxKafkaProperties topics;
 
-    @Value("${app.outbox.publisher.enabled:true}")
     private boolean enabled;
 
     @Value("${app.outbox.publisher.batch-size:50}")
@@ -27,7 +32,6 @@ public class OutboxKafkaPublisherJob {
 
     @Scheduled(fixedDelayString = "${app.outbox.publisher.fixed-delay-ms:1000}")
     public void publishUnsentEvents() {
-        if (!enabled) return;
         publishBatch();
     }
 
