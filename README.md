@@ -6,6 +6,11 @@ The project demonstrates transactional consistency, concurrency handling, and ev
 
 This is not a demo CRUD application — it models real-world order placement, inventory control, and asynchronous integrations.
 
+## 📊 Order Process (BPMN) 
+### BPMN diagram illustrating how order request is processed. 
+
+<img width="1212" height="1039" alt="image" src="docs/OrderRequestBPMNDiagram.PNG"/>
+
 ## ✨ Key Features
 
 Product and inventory management
