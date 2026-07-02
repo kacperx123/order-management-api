@@ -7,8 +7,8 @@ import com.example.order_management_api.api.UpdateStockRequest;
 import com.example.order_management_api.event.model.ProductCreatedEvent;
 import com.example.order_management_api.event.model.StockAdjustedEvent;
 import com.example.order_management_api.event.publisher.DomainEventPublisher;
-import com.example.order_management_api.exception.InsufficientStockException;
 import com.example.order_management_api.exception.ProductNotFoundException;
+import com.example.order_management_api.mapper.ProductMapper;
 import com.example.order_management_api.model.Inventory;
 import com.example.order_management_api.model.Product;
 import com.example.order_management_api.repository.InventoryRepository;
@@ -18,7 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -27,60 +30,59 @@ public class ProductService {
     private final DomainEventPublisher domainEventPublisher;
     private final ProductRepository productRepository;
     private final InventoryRepository inventoryRepository;
+    private final InventoryService inventoryService;
+    private final ProductMapper productMapper;
 
     @Transactional
     public ProductResponse createProduct(CreateProductRequest request) {
         boolean active = request.active() != null ? request.active() : true;
 
-        Product product = new Product(
+        Product saved = productRepository.save(new Product(
                 request.name(),
                 request.price(),
                 active
-        );
+        ));
 
-        Product saved = productRepository.save(product);
-
-        Inventory inventory = new Inventory(
-                saved,
-                request.initialStock(),
-                0
-        );
-
+        Inventory inventory = new Inventory(saved, request.initialStock(), 0);
         inventoryRepository.saveAndFlush(inventory);
 
         domainEventPublisher.publish(ProductCreatedEvent.now(saved.getId(), saved.getName(), saved.getPrice()));
         domainEventPublisher.publish(StockAdjustedEvent.now(saved.getId(), 0, inventory.getAvailable(), inventory.getReserved()));
 
-        return toResponse(saved, inventory);
+        return productMapper.toResponse(saved, inventory);
     }
 
     @Transactional(readOnly = true)
     public ProductResponse getProduct(UUID id) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new ProductNotFoundException(id));
-
-        Inventory inventory = inventoryRepository.findByProduct_Id(id)
-                .orElseThrow(() -> new ProductNotFoundException(id));
-
-        return toResponse(product, inventory);
+        return productMapper.toResponse(findProduct(id), inventoryService.getInventory(id));
     }
 
     @Transactional(readOnly = true)
     public List<ProductResponse> listProducts(Boolean active) {
-        return productRepository.findAll().stream()
-                .filter(p -> active == null || p.isActive() == active)
+        List<Product> products = active == null
+                ? productRepository.findAll()
+                : productRepository.findByActive(active);
+
+        // Fetch all inventories in one query instead of one per product.
+        Map<UUID, Inventory> inventoriesByProductId = inventoryRepository
+                .findByProduct_IdIn(products.stream().map(Product::getId).toList())
+                .stream()
+                .collect(Collectors.toMap(inv -> inv.getProduct().getId(), Function.identity()));
+
+        return products.stream()
                 .map(p -> {
-                    Inventory inv = inventoryRepository.findByProduct_Id(p.getId())
-                            .orElseThrow();
-                    return toResponse(p, inv);
+                    Inventory inventory = inventoriesByProductId.get(p.getId());
+                    if (inventory == null) {
+                        throw new ProductNotFoundException(p.getId());
+                    }
+                    return productMapper.toResponse(p, inventory);
                 })
                 .toList();
     }
 
     @Transactional
     public ProductResponse updateProduct(UUID id, UpdateProductRequest request) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new ProductNotFoundException(id));
+        Product product = findProduct(id);
 
         if (request.name() != null) {
             product.setName(request.name());
@@ -92,50 +94,17 @@ public class ProductService {
             product.setActive(request.active());
         }
 
-        Inventory inventory = inventoryRepository.findByProduct_Id(id)
-                .orElseThrow(() -> new ProductNotFoundException(id));
-
-        return toResponse(product, inventory);
+        return productMapper.toResponse(product, inventoryService.getInventory(id));
     }
 
     @Transactional
     public ProductResponse updateStock(UUID productId, UpdateStockRequest request) {
-        Inventory inventory = inventoryRepository.findByProduct_Id(productId)
-                .orElseThrow(() -> new ProductNotFoundException(productId));
-
-        int prev = inventory.getAvailable();
-
-        if (request.delta() != null) {
-            int newAvailable = inventory.getAvailable() + request.delta();
-            if (newAvailable < 0) {
-                throw new InsufficientStockException(request.delta(), inventory.getAvailable());
-            }
-            inventory.setAvailable(newAvailable);
-        } else {
-            if (request.setTo() < 0) {
-                throw new InsufficientStockException(request.setTo(), inventory.getAvailable());
-            }
-            inventory.setAvailable(request.setTo());
-        }
-
-        Product product = inventory.getProduct();
-
-        domainEventPublisher.publish(
-                StockAdjustedEvent.now(productId, prev, inventory.getAvailable(), inventory.getReserved())
-        );
-
-        return toResponse(product, inventory);
+        Inventory inventory = inventoryService.adjust(productId, request);
+        return productMapper.toResponse(inventory.getProduct(), inventory);
     }
 
-    private ProductResponse toResponse(Product product, Inventory inventory) {
-        return new ProductResponse(
-                product.getId(),
-                product.getName(),
-                product.getPrice(),
-                product.isActive(),
-                inventory.getAvailable(),
-                inventory.getReserved(),
-                product.getCreatedAt()
-        );
+    private Product findProduct(UUID id) {
+        return productRepository.findById(id)
+                .orElseThrow(() -> new ProductNotFoundException(id));
     }
 }

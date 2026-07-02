@@ -232,6 +232,48 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
     }
 
     @Test
+    void shouldRestoreStockWhenOrderIsCancelled() {
+        // given: product with 10 in stock and an order for 3
+        UUID productId = createProductAndGetId("Milk", 3.99, 10);
+
+        CreateOrderRequest request = new CreateOrderRequest(
+                "test@example.com",
+                List.of(new CreateOrderItemRequest(productId, 3))
+        );
+
+        OrderResponse order = client()
+                .post()
+                .uri("/orders")
+                .body(request)
+                .retrieve()
+                .body(OrderResponse.class);
+
+        assertThat(order).isNotNull();
+
+        ProductResponse afterOrder = client()
+                .get()
+                .uri("/products/" + productId)
+                .retrieve()
+                .body(ProductResponse.class);
+
+        assertThat(afterOrder).isNotNull();
+        assertThat(afterOrder.available()).isEqualTo(7);
+
+        // when: the order is cancelled
+        client().post().uri("/orders/" + order.id() + "/cancel").retrieve().toBodilessEntity();
+
+        // then: the reserved stock is returned
+        ProductResponse afterCancel = client()
+                .get()
+                .uri("/products/" + productId)
+                .retrieve()
+                .body(ProductResponse.class);
+
+        assertThat(afterCancel).isNotNull();
+        assertThat(afterCancel.available()).isEqualTo(10);
+    }
+
+    @Test
     void shouldReturn400WhenTransitionIsInvalid() {
         UUID orderId = createOrderAndGetId();
 

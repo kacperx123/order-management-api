@@ -85,4 +85,51 @@ class OutboxIntegrationTest extends PostgresTestBase {
                                 && e.getPublishedAt() == null
                 );
     }
+
+    @Test
+    void shouldPersistOutboxEventWhenOrderIsPaid() {
+        // given: product + order
+        CreateProductRequest productRequest = new CreateProductRequest(
+                "Bread",
+                BigDecimal.valueOf(2.50),
+                10,
+                true
+        );
+
+        ProductResponse product = client()
+                .post()
+                .uri("/products")
+                .body(productRequest)
+                .retrieve()
+                .body(ProductResponse.class);
+
+        assertThat(product).isNotNull();
+
+        CreateOrderRequest orderRequest = new CreateOrderRequest(
+                "test@example.com",
+                List.of(new CreateOrderItemRequest(product.id(), 1))
+        );
+
+        OrderResponse order = client()
+                .post()
+                .uri("/orders")
+                .body(orderRequest)
+                .retrieve()
+                .body(OrderResponse.class);
+
+        assertThat(order).isNotNull();
+
+        // when: order is paid
+        client().post().uri("/orders/" + order.id() + "/pay").retrieve().toBodilessEntity();
+
+        // then: OrderPaid event was persisted in the same transaction as the status change
+        var events = outboxEventRepository.findAll();
+
+        assertThat(events)
+                .anyMatch(e ->
+                        e.getAggregateType().equals("ORDER")
+                                && e.getAggregateId().equals(order.id())
+                                && e.getType().equals("OrderPaid")
+                );
+    }
 }

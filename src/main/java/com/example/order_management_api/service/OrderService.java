@@ -1,105 +1,51 @@
 package com.example.order_management_api.service;
 
+import com.example.order_management_api.api.CreateOrderItemRequest;
+import com.example.order_management_api.api.CreateOrderRequest;
+import com.example.order_management_api.api.OrderResponse;
 import com.example.order_management_api.event.model.OrderCancelledEvent;
 import com.example.order_management_api.event.model.OrderCreatedEvent;
 import com.example.order_management_api.event.model.OrderPaidEvent;
 import com.example.order_management_api.event.publisher.DomainEventPublisher;
-import com.example.order_management_api.exception.InactiveProductException;
-import com.example.order_management_api.exception.InvalidOrderStatusTransitionException;
 import com.example.order_management_api.exception.OrderNotFoundException;
-import com.example.order_management_api.exception.OutOfStockException;
-import com.example.order_management_api.exception.ProductNotFoundException;
-import com.example.order_management_api.model.Inventory;
+import com.example.order_management_api.mapper.OrderMapper;
 import com.example.order_management_api.model.Order;
 import com.example.order_management_api.model.OrderItem;
 import com.example.order_management_api.model.OrderStatus;
 import com.example.order_management_api.model.Product;
-import com.example.order_management_api.repository.InventoryRepository;
 import com.example.order_management_api.repository.OrderRepository;
-import com.example.order_management_api.repository.ProductRepository;
-import org.springframework.beans.factory.annotation.Value;
+import com.example.order_management_api.service.validation.OrderValidator;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-import com.example.order_management_api.api.CreateOrderItemRequest;
-import com.example.order_management_api.api.CreateOrderRequest;
-
 @Service
+@RequiredArgsConstructor
 public class OrderService {
 
-    private final long placeOrderDelayMs;
     private final DomainEventPublisher domainEventPublisher;
     private final OrderRepository orderRepository;
-    private final ProductRepository productRepository;
-    private final InventoryRepository inventoryRepository;
-
-    public OrderService(
-            DomainEventPublisher domainEventPublisher,
-            OrderRepository orderRepository,
-            ProductRepository productRepository,
-            InventoryRepository inventoryRepository,
-            @Value("${app.order.place.delay-ms:0}") long placeOrderDelayMs
-    ) {
-        this.domainEventPublisher = domainEventPublisher;
-        this.orderRepository = orderRepository;
-        this.productRepository = productRepository;
-        this.inventoryRepository = inventoryRepository;
-        this.placeOrderDelayMs = placeOrderDelayMs;
-    }
+    private final OrderValidator orderValidator;
+    private final InventoryService inventoryService;
+    private final OrderMapper orderMapper;
 
     @Transactional
-    public Order createOrder(CreateOrderRequest request) {
-        UUID id = UUID.randomUUID();
-
-        Order order = new Order(
-                id,
-                request.customerEmail(),
-                OrderStatus.CREATED,
-                Instant.now()
-        );
+    public OrderResponse createOrder(CreateOrderRequest request) {
+        Order order = Order.newOrder(request.customerEmail());
 
         for (CreateOrderItemRequest item : request.items()) {
-            UUID productId = item.productId();
-            int quantity = item.quantity();
+            Product product = orderValidator.validateOrderable(item.productId());
+            inventoryService.reserve(item.productId(), item.quantity());
 
-            Product product = productRepository.findById(productId)
-                    .orElseThrow(() -> new ProductNotFoundException(productId));
-
-            if (!product.isActive()) {
-                throw new InactiveProductException(productId);
-            }
-
-            Inventory inventory = inventoryRepository.findByProduct_Id(productId)
-                    .orElseThrow(() -> new ProductNotFoundException(productId));
-
-            int available = inventory.getAvailable();
-            if (available < quantity) {
-                throw new OutOfStockException(productId, quantity, available);
-            }
-
-            // Decrease stock in the same transaction as order creation.
-            inventory.setAvailable(available - quantity);
-
-            if (placeOrderDelayMs > 0) {
-                try {
-                    Thread.sleep(placeOrderDelayMs);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-
-            OrderItem orderItem = new OrderItem(
-                    productId,
+            order.addItem(new OrderItem(
+                    product.getId(),
                     product.getName(),
                     product.getPrice(),
-                    quantity
-            );
-
-            order.addItem(orderItem);
+                    item.quantity()
+            ));
         }
 
         // Persist order + items and stock changes atomically.
@@ -107,46 +53,53 @@ public class OrderService {
 
         domainEventPublisher.publish(OrderCreatedEvent.now(saved.getId(), saved.getCustomerEmail()));
 
-        return saved;
+        return orderMapper.toResponse(saved);
     }
 
-    public Order getOrder(UUID id) {
-        return orderRepository.findById(id)
-                .orElseThrow(() -> new OrderNotFoundException(id));
+    @Transactional(readOnly = true)
+    public OrderResponse getOrder(UUID id) {
+        return orderMapper.toResponse(findOrder(id));
     }
 
-    public List<Order> listOrders(OrderStatus status) {
-        if (status == null) {
-            return orderRepository.findAll();
-        }
-        return orderRepository.findByStatus(status);
+    @Transactional(readOnly = true)
+    public List<OrderResponse> listOrders(OrderStatus status) {
+        List<Order> orders = status == null
+                ? orderRepository.findAll()
+                : orderRepository.findByStatus(status);
+
+        return orders.stream()
+                .map(orderMapper::toResponse)
+                .toList();
     }
 
-    public Order payOrder(UUID id) {
-        Order order = getOrder(id);
+    @Transactional
+    public OrderResponse payOrder(UUID id) {
+        Order order = findOrder(id);
 
-        if (order.getStatus() != OrderStatus.CREATED) {
-            throw new InvalidOrderStatusTransitionException(order.getStatus(), OrderStatus.PAID);
-        }
-
-        order.setStatus(OrderStatus.PAID);
+        order.pay();
 
         domainEventPublisher.publish(OrderPaidEvent.now(order.getId()));
 
-        return orderRepository.save(order);
+        return orderMapper.toResponse(order);
     }
 
-    public Order cancelOrder(UUID id) {
-        Order order = getOrder(id);
+    @Transactional
+    public OrderResponse cancelOrder(UUID id) {
+        Order order = findOrder(id);
 
-        if (order.getStatus() != OrderStatus.CREATED) {
-            throw new InvalidOrderStatusTransitionException(order.getStatus(), OrderStatus.CANCELLED);
+        order.cancel();
+
+        for (OrderItem item : order.getItems()) {
+            inventoryService.release(item.getProductId(), item.getQuantity());
         }
-
-        order.setStatus(OrderStatus.CANCELLED);
 
         domainEventPublisher.publish(OrderCancelledEvent.now(order.getId()));
 
-        return orderRepository.save(order);
+        return orderMapper.toResponse(order);
+    }
+
+    private Order findOrder(UUID id) {
+        return orderRepository.findById(id)
+                .orElseThrow(() -> new OrderNotFoundException(id));
     }
 }

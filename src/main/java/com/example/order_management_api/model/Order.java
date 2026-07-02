@@ -1,5 +1,6 @@
 package com.example.order_management_api.model;
 
+import com.example.order_management_api.exception.InvalidOrderStatusTransitionException;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.proxy.HibernateProxy;
@@ -23,7 +24,6 @@ public class Order {
 
     private String customerEmail;
 
-    @Setter
     @Enumerated(EnumType.STRING)
     private OrderStatus status;
 
@@ -39,9 +39,28 @@ public class Order {
         this.createdAt = createdAt;
     }
 
+    public static Order newOrder(String customerEmail) {
+        return new Order(UUID.randomUUID(), customerEmail, OrderStatus.CREATED, Instant.now());
+    }
+
     public void addItem(OrderItem item) {
         items.add(item);
         item.setOrder(this);
+    }
+
+    public void pay() {
+        transitionTo(OrderStatus.PAID);
+    }
+
+    public void cancel() {
+        transitionTo(OrderStatus.CANCELLED);
+    }
+
+    private void transitionTo(OrderStatus target) {
+        if (!status.canTransitionTo(target)) {
+            throw new InvalidOrderStatusTransitionException(status, target);
+        }
+        this.status = target;
     }
 
     @Override
