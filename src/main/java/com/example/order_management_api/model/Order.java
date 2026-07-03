@@ -29,6 +29,10 @@ public class Order {
 
     private Instant createdAt;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();
 
@@ -39,8 +43,14 @@ public class Order {
         this.createdAt = createdAt;
     }
 
-    public static Order newOrder(String customerEmail) {
-        return new Order(UUID.randomUUID(), customerEmail, OrderStatus.CREATED, Instant.now());
+    public static Order newOrder(User user) {
+        Order order = new Order(UUID.randomUUID(), user.getEmail(), OrderStatus.CREATED, Instant.now());
+        order.user = user;
+        return order;
+    }
+
+    public boolean isOwnedBy(UUID userId) {
+        return user != null && user.getId() != null && user.getId().equals(userId);
     }
 
     public void addItem(OrderItem item) {

@@ -10,4 +10,6 @@ import com.example.order_management_api.model.OrderStatus;
 
 public interface OrderRepository extends JpaRepository<Order, UUID> {
     List<Order> findByStatus(OrderStatus status);
+
+    List<Order> findByUser_Id(UUID userId);
 }

@@ -6,6 +6,7 @@ import com.example.order_management_api.api.CreateProductRequest;
 import com.example.order_management_api.api.ProductResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.web.client.RestClient;
@@ -24,6 +25,8 @@ class OrderOptimisticLockingIntegrationTest extends PostgresTestBase {
     int port;
 
     private RestClient restClient;
+    private RestClient adminClient;
+    private RestClient userClient;
 
     private RestClient client() {
         if (restClient == null) {
@@ -34,6 +37,29 @@ class OrderOptimisticLockingIntegrationTest extends PostgresTestBase {
         return restClient;
     }
 
+    private RestClient admin() {
+        if (adminClient == null) {
+            String token = AuthTestSupport.loginAdmin(client());
+            adminClient = RestClient.builder()
+                    .baseUrl("http://localhost:" + port)
+                    .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .build();
+        }
+        return adminClient;
+    }
+
+    private RestClient user() {
+        if (userClient == null) {
+            String email = "user-" + UUID.randomUUID() + "@test.com";
+            String token = AuthTestSupport.registerAndLogin(client(), email, "password123");
+            userClient = RestClient.builder()
+                    .baseUrl("http://localhost:" + port)
+                    .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .build();
+        }
+        return userClient;
+    }
+
     private UUID createProductAndGetId(String name, double price, int initialStock) {
         CreateProductRequest req = new CreateProductRequest(
                 name,
@@ -42,7 +68,7 @@ class OrderOptimisticLockingIntegrationTest extends PostgresTestBase {
                 true
         );
 
-        ProductResponse created = client()
+        ProductResponse created = admin()
                 .post()
                 .uri("/products")
                 .body(req)
@@ -59,9 +85,11 @@ class OrderOptimisticLockingIntegrationTest extends PostgresTestBase {
         UUID productId = createProductAndGetId("Milk", 3.99, 1);
 
         CreateOrderRequest orderRequest = new CreateOrderRequest(
-                "test@example.com",
                 List.of(new CreateOrderItemRequest(productId, 1))
         );
+
+        // authenticate before racing so login is not part of the measured window
+        RestClient buyer = user();
 
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -72,7 +100,7 @@ class OrderOptimisticLockingIntegrationTest extends PostgresTestBase {
             boolean started = start.await(2, TimeUnit.SECONDS);
             assertThat(started).isTrue();
 
-            return (HttpStatus) client()
+            return (HttpStatus) buyer
                     .post()
                     .uri("/orders")
                     .body(orderRequest)

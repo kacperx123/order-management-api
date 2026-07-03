@@ -4,8 +4,6 @@ import com.example.order_management_api.api.CreateProductRequest;
 import com.example.order_management_api.api.ProductResponse;
 import com.example.order_management_api.api.UpdateProductRequest;
 import com.example.order_management_api.api.UpdateStockRequest;
-import com.example.order_management_api.event.model.ProductCreatedEvent;
-import com.example.order_management_api.event.model.StockAdjustedEvent;
 import com.example.order_management_api.event.publisher.DomainEventPublisher;
 import com.example.order_management_api.exception.ErrorResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,9 +13,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
@@ -25,24 +23,37 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@Import(ProductControllerIntegrationTest.DomainEventsTestConfig.class)
 class ProductControllerIntegrationTest extends PostgresTestBase {
 
     @LocalServerPort
     int port;
 
-    private RestClient restClient;
+    private RestClient plainClient;
+    private RestClient adminClient;
 
     @Autowired
     @Qualifier("recordingDomainEventPublisher")
     TestDomainEventPublisher recordingPublisher;
 
     private RestClient client() {
-        if (restClient == null) {
-            restClient = RestClient.builder()
+        if (plainClient == null) {
+            plainClient = RestClient.builder()
                     .baseUrl("http://localhost:" + port)
                     .build();
         }
-        return restClient;
+        return plainClient;
+    }
+
+    private RestClient admin() {
+        if (adminClient == null) {
+            String token = AuthTestSupport.loginAdmin(client());
+            adminClient = RestClient.builder()
+                    .baseUrl("http://localhost:" + port)
+                    .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .build();
+        }
+        return adminClient;
     }
 
     private UUID createProductAndGetId(String name, BigDecimal price, int initialStock) {
@@ -53,7 +64,7 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
                 true
         );
 
-        ProductResponse created = client()
+        ProductResponse created = admin()
                 .post()
                 .uri("/products")
                 .body(request)
@@ -81,7 +92,7 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
                 true
         );
 
-        ProductResponse body = client()
+        ProductResponse body = admin()
                 .post()
                 .uri("/products")
                 .body(request)
@@ -100,9 +111,28 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
     }
 
     @Test
-    void shouldGetProductById() {
+    void shouldReturn401WhenCreatingProductWithoutToken() {
+        CreateProductRequest request = new CreateProductRequest(
+                "Milk",
+                BigDecimal.valueOf(3.99),
+                10,
+                true
+        );
+
+        HttpStatus status = (HttpStatus) client()
+                .post()
+                .uri("/products")
+                .body(request)
+                .exchange((req, res) -> res.getStatusCode());
+
+        assertThat(status).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void shouldGetProductByIdWithoutToken() {
         UUID id = createProductAndGetId("Bread", BigDecimal.valueOf(2.50), 5);
 
+        // product catalog reads are public
         ProductResponse found = client()
                 .get()
                 .uri("/products/" + id)
@@ -143,7 +173,7 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
                 false
         );
 
-        client().post().uri("/products").body(inactiveReq).retrieve().toBodilessEntity();
+        admin().post().uri("/products").body(inactiveReq).retrieve().toBodilessEntity();
 
         ProductResponse[] activeOnly = client()
                 .get()
@@ -166,7 +196,7 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
                 false
         );
 
-        ProductResponse updated = client()
+        ProductResponse updated = admin()
                 .patch()
                 .uri("/products/" + id)
                 .body(patch)
@@ -187,7 +217,7 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
 
         UpdateStockRequest request = new UpdateStockRequest(-3, null);
 
-        ProductResponse updated = client()
+        ProductResponse updated = admin()
                 .post()
                 .uri("/products/" + id + "/stock")
                 .body(request)
@@ -204,7 +234,7 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
 
         UpdateStockRequest request = new UpdateStockRequest(null, 25);
 
-        ProductResponse updated = client()
+        ProductResponse updated = admin()
                 .post()
                 .uri("/products/" + id + "/stock")
                 .body(request)
@@ -221,7 +251,7 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
 
         UpdateStockRequest request = new UpdateStockRequest(-5, null);
 
-        ErrorResponse error = client()
+        ErrorResponse error = admin()
                 .post()
                 .uri("/products/" + id + "/stock")
                 .body(request)
@@ -259,7 +289,7 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
         // invalid: both delta and setTo provided
         UpdateStockRequest invalid = new UpdateStockRequest(-1, 5);
 
-        ErrorResponse error = client()
+        ErrorResponse error = admin()
                 .post()
                 .uri("/products/" + id + "/stock")
                 .body(invalid)
@@ -283,7 +313,7 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
                 true
         );
 
-        ErrorResponse error = client()
+        ErrorResponse error = admin()
                 .post()
                 .uri("/products")
                 .body(invalid)
@@ -309,8 +339,5 @@ class ProductControllerIntegrationTest extends PostgresTestBase {
         DomainEventPublisher domainEventPublisher(TestDomainEventPublisher recording) {
             return recording;
         }
-
-
     }
 }
-

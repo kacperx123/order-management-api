@@ -1,10 +1,6 @@
 package com.example.order_management_api;
 
 import com.example.order_management_api.api.*;
-import com.example.order_management_api.event.model.DomainEvent;
-import com.example.order_management_api.event.model.OrderCancelledEvent;
-import com.example.order_management_api.event.model.OrderCreatedEvent;
-import com.example.order_management_api.event.model.OrderPaidEvent;
 import com.example.order_management_api.event.publisher.DomainEventPublisher;
 import com.example.order_management_api.exception.ErrorResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,7 +11,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
@@ -32,19 +28,45 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
     @LocalServerPort
     int port;
 
-    private RestClient restClient;
+    private RestClient plainClient;
+    private RestClient adminClient;
+    private RestClient userClient;
+    private String userEmail;
 
     @Autowired
     @Qualifier("recordingDomainEventPublisher")
     TestDomainEventPublisher recordingPublisher;
 
     private RestClient client() {
-        if (restClient == null) {
-            restClient = RestClient.builder()
+        if (plainClient == null) {
+            plainClient = RestClient.builder()
                     .baseUrl("http://localhost:" + port)
                     .build();
         }
-        return restClient;
+        return plainClient;
+    }
+
+    private RestClient admin() {
+        if (adminClient == null) {
+            String token = AuthTestSupport.loginAdmin(client());
+            adminClient = RestClient.builder()
+                    .baseUrl("http://localhost:" + port)
+                    .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .build();
+        }
+        return adminClient;
+    }
+
+    private RestClient user() {
+        if (userClient == null) {
+            userEmail = "user-" + UUID.randomUUID() + "@test.com";
+            String token = AuthTestSupport.registerAndLogin(client(), userEmail, "password123");
+            userClient = RestClient.builder()
+                    .baseUrl("http://localhost:" + port)
+                    .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .build();
+        }
+        return userClient;
     }
 
     private UUID createProductAndGetId(String name, double price, int initialStock) {
@@ -55,7 +77,7 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
                 true
         );
 
-        ProductResponse created = client()
+        ProductResponse created = admin()
                 .post()
                 .uri("/products")
                 .body(req)
@@ -70,11 +92,10 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         UUID productId = createProductAndGetId("Milk", 3.99, 100);
 
         CreateOrderRequest request = new CreateOrderRequest(
-                "test@example.com",
                 List.of(new CreateOrderItemRequest(productId, 2))
         );
 
-        OrderResponse created = client()
+        OrderResponse created = user()
                 .post()
                 .uri("/orders")
                 .body(request)
@@ -97,12 +118,11 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         UUID productId = createProductAndGetId("Milk", 3.99, 10);
 
         CreateOrderRequest request = new CreateOrderRequest(
-                "test@example.com",
                 List.of(new CreateOrderItemRequest(productId, 2))
         );
 
         // when
-        ResponseEntity<OrderResponse> response = client()
+        ResponseEntity<OrderResponse> response = user()
                 .post()
                 .uri("/orders")
                 .body(request)
@@ -114,7 +134,7 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(response.getBody()).isNotNull();
 
         OrderResponse order = response.getBody();
-        assertThat(order.customerEmail()).isEqualTo("test@example.com");
+        assertThat(order.customerEmail()).isEqualTo(userEmail);
         assertThat(order.items()).hasSize(1);
 
         OrderItemResponse item = order.items().get(0);
@@ -133,21 +153,33 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(productAfter.available()).isEqualTo(8);
     }
 
+    @Test
+    void shouldReturn401WhenCreatingOrderWithoutToken() {
+        UUID productId = createProductAndGetId("Milk", 3.99, 10);
 
+        CreateOrderRequest request = new CreateOrderRequest(
+                List.of(new CreateOrderItemRequest(productId, 1))
+        );
+
+        HttpStatus status = (HttpStatus) client()
+                .post()
+                .uri("/orders")
+                .body(request)
+                .exchange((req, res) -> res.getStatusCode());
+
+        assertThat(status).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
 
     @Test
     void shouldReturn404WhenOrderNotFound() {
         UUID randomId = UUID.randomUUID();
 
-        try {
-            client()
-                    .get()
-                    .uri("/orders/" + randomId)
-                    .retrieve()
-                    .body(OrderResponse.class);
-        } catch (Exception ex) {
-            assertThat(ex.getMessage()).contains("404");
-        }
+        HttpStatus status = (HttpStatus) user()
+                .get()
+                .uri("/orders/" + randomId)
+                .exchange((req, res) -> res.getStatusCode());
+
+        assertThat(status).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     @Test
@@ -156,14 +188,13 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         UUID productId = createProductAndGetId("Bread", 2.50, 10);
 
         CreateOrderRequest request = new CreateOrderRequest(
-                "filter@test.com",
                 List.of(new CreateOrderItemRequest(productId, 1))
         );
 
-        client().post().uri("/orders").body(request).retrieve().toBodilessEntity();
+        user().post().uri("/orders").body(request).retrieve().toBodilessEntity();
 
-        // when
-        OrderResponse[] response = client()
+        // when: listing all orders is an admin operation
+        OrderResponse[] response = admin()
                 .get()
                 .uri("/orders?status=CREATED")
                 .retrieve()
@@ -176,20 +207,34 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
     }
 
     @Test
+    void shouldListOwnOrders() {
+        UUID orderId = createOrderAndGetId();
+
+        OrderResponse[] myOrders = user()
+                .get()
+                .uri("/orders/my")
+                .retrieve()
+                .body(OrderResponse[].class);
+
+        assertThat(myOrders).isNotNull();
+        assertThat(myOrders).anyMatch(o -> o.id().equals(orderId));
+        assertThat(myOrders).allMatch(o -> o.customerEmail().equals(userEmail));
+    }
+
+    @Test
     void shouldSnapshotPriceAtPurchase() {
         UUID productId = createProductAndGetId("Milk", 3.99, 10);
 
         // change product price
         UpdateProductRequest patch = new UpdateProductRequest(null, BigDecimal.valueOf(9.99), null);
-        client().patch().uri("/products/" + productId).body(patch).retrieve().toBodilessEntity();
+        admin().patch().uri("/products/" + productId).body(patch).retrieve().toBodilessEntity();
 
         // place order after price change
         CreateOrderRequest request = new CreateOrderRequest(
-                "test@example.com",
                 List.of(new CreateOrderItemRequest(productId, 1))
         );
 
-        OrderResponse order = client()
+        OrderResponse order = user()
                 .post()
                 .uri("/orders")
                 .body(request)
@@ -207,7 +252,7 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
     void shouldPayCreatedOrder() {
         UUID orderId = createOrderAndGetId();
 
-        OrderResponse paid = client()
+        OrderResponse paid = user()
                 .post()
                 .uri("/orders/" + orderId + "/pay")
                 .retrieve()
@@ -221,7 +266,7 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
     void shouldCancelCreatedOrder() {
         UUID orderId = createOrderAndGetId();
 
-        OrderResponse cancelled = client()
+        OrderResponse cancelled = user()
                 .post()
                 .uri("/orders/" + orderId + "/cancel")
                 .retrieve()
@@ -237,11 +282,10 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         UUID productId = createProductAndGetId("Milk", 3.99, 10);
 
         CreateOrderRequest request = new CreateOrderRequest(
-                "test@example.com",
                 List.of(new CreateOrderItemRequest(productId, 3))
         );
 
-        OrderResponse order = client()
+        OrderResponse order = user()
                 .post()
                 .uri("/orders")
                 .body(request)
@@ -260,7 +304,7 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(afterOrder.available()).isEqualTo(7);
 
         // when: the order is cancelled
-        client().post().uri("/orders/" + order.id() + "/cancel").retrieve().toBodilessEntity();
+        user().post().uri("/orders/" + order.id() + "/cancel").retrieve().toBodilessEntity();
 
         // then: the reserved stock is returned
         ProductResponse afterCancel = client()
@@ -278,12 +322,12 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         UUID orderId = createOrderAndGetId();
 
         // pay first
-        client().post().uri("/orders/" + orderId + "/pay").retrieve().toBodilessEntity();
+        user().post().uri("/orders/" + orderId + "/pay").retrieve().toBodilessEntity();
 
         // we only care whether the INVALID cancel publishes anything
         recordingPublisher.clear();
 
-        ErrorResponse error = client()
+        ErrorResponse error = user()
                 .post()
                 .uri("/orders/" + orderId + "/cancel")
                 .exchange((req, res) -> {
@@ -304,12 +348,11 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         UUID productId = createProductAndGetId("Milk", 3.99, 1);
 
         CreateOrderRequest request = new CreateOrderRequest(
-                "test@example.com",
                 List.of(new CreateOrderItemRequest(productId, 2))
         );
 
         // when
-        ErrorResponse error = client()
+        ErrorResponse error = user()
                 .post()
                 .uri("/orders")
                 .body(request)
@@ -334,7 +377,7 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
                 false // inactive
         );
 
-        ProductResponse product = client()
+        ProductResponse product = admin()
                 .post()
                 .uri("/products")
                 .body(req)
@@ -344,12 +387,11 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         assertThat(product).isNotNull();
 
         CreateOrderRequest orderRequest = new CreateOrderRequest(
-                "test@example.com",
                 List.of(new CreateOrderItemRequest(product.id(), 1))
         );
 
         // when
-        ErrorResponse error = client()
+        ErrorResponse error = user()
                 .post()
                 .uri("/orders")
                 .body(orderRequest)
@@ -369,11 +411,10 @@ class OrderControllerIntegrationTest extends PostgresTestBase {
         UUID productId = createProductAndGetId("Milk", 3.99, 1);
 
         CreateOrderRequest request = new CreateOrderRequest(
-                "test@example.com",
                 List.of(new CreateOrderItemRequest(productId, 5))
         );
 
-        client()
+        user()
                 .post()
                 .uri("/orders")
                 .body(request)

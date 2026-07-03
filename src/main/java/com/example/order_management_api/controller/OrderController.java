@@ -8,11 +8,14 @@ import jakarta.validation.Valid;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import com.example.order_management_api.api.CreateOrderRequest;
 import com.example.order_management_api.api.OrderResponse;
 import com.example.order_management_api.model.OrderStatus;
+import com.example.order_management_api.security.CurrentUser;
 import com.example.order_management_api.service.OrderService;
 
 @RestController
@@ -23,16 +26,19 @@ public class OrderController {
     private final OrderService orderService;
 
     @PostMapping
-    public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
-        OrderResponse created = orderService.createOrder(request);
+    public ResponseEntity<OrderResponse> createOrder(
+            @Valid @RequestBody CreateOrderRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        OrderResponse created = orderService.createOrder(request, CurrentUser.from(jwt));
         return ResponseEntity
                 .created(URI.create("/orders/" + created.id()))
                 .body(created);
     }
 
     @GetMapping("/{id}")
-    public OrderResponse getOrder(@PathVariable UUID id) {
-        return orderService.getOrder(id);
+    public OrderResponse getOrder(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        return orderService.getOrder(id, CurrentUser.from(jwt));
     }
 
     @GetMapping
@@ -40,13 +46,18 @@ public class OrderController {
         return orderService.listOrders(status);
     }
 
+    @GetMapping("/my")
+    public List<OrderResponse> listMyOrders(@AuthenticationPrincipal Jwt jwt) {
+        return orderService.listMyOrders(CurrentUser.from(jwt));
+    }
+
     @PostMapping("/{id}/pay")
-    public OrderResponse pay(@PathVariable UUID id) {
-        return orderService.payOrder(id);
+    public OrderResponse pay(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        return orderService.payOrder(id, CurrentUser.from(jwt));
     }
 
     @PostMapping("/{id}/cancel")
-    public OrderResponse cancel(@PathVariable UUID id) {
-        return orderService.cancelOrder(id);
+    public OrderResponse cancel(@PathVariable UUID id, @AuthenticationPrincipal Jwt jwt) {
+        return orderService.cancelOrder(id, CurrentUser.from(jwt));
     }
 }

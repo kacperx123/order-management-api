@@ -30,13 +30,11 @@ public class OutboxKafkaPublisherJob {
     @Value("${app.outbox.publisher.batch-size:50}")
     private int batchSize;
 
+    // @Transactional must sit on the method invoked through the Spring proxy;
+    // a self-invoked internal method would silently run without a transaction.
     @Scheduled(fixedDelayString = "${app.outbox.publisher.fixed-delay-ms:1000}")
-    public void publishUnsentEvents() {
-        publishBatch();
-    }
-
     @Transactional
-    void publishBatch() {
+    public void publishUnsentEvents() {
         var page = outboxEventRepository
                 .findByPublishedAtIsNullOrderByOccurredAtAsc(PageRequest.of(0, batchSize));
 

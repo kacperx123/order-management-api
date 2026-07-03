@@ -4,19 +4,22 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-@Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public abstract class PostgresTestBase {
 
-    @Container
-    static PostgreSQLContainer<?> postgres =
+    // Singleton container shared by all test classes and cached Spring contexts.
+    // A per-class @Container lifecycle breaks when Spring reuses a context across
+    // classes while JUnit restarts the container underneath it.
+    static final PostgreSQLContainer<?> postgres =
             new PostgreSQLContainer<>("postgres:16")
                     .withDatabaseName("orders")
                     .withUsername("orders")
                     .withPassword("orders");
+
+    static {
+        postgres.start();
+    }
 
     @DynamicPropertySource
     static void registerProps(DynamicPropertyRegistry registry) {

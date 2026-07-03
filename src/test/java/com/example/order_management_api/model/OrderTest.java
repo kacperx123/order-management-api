@@ -8,19 +8,25 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OrderTest {
 
+    private Order newOrder() {
+        User user = new User("test@example.com", "hash", Role.USER);
+        return Order.newOrder(user);
+    }
+
     @Test
     void newOrderStartsAsCreated() {
-        Order order = Order.newOrder("test@example.com");
+        Order order = newOrder();
 
         assertThat(order.getId()).isNotNull();
         assertThat(order.getStatus()).isEqualTo(OrderStatus.CREATED);
         assertThat(order.getCreatedAt()).isNotNull();
         assertThat(order.getCustomerEmail()).isEqualTo("test@example.com");
+        assertThat(order.getUser()).isNotNull();
     }
 
     @Test
     void payTransitionsCreatedOrderToPaid() {
-        Order order = Order.newOrder("test@example.com");
+        Order order = newOrder();
 
         order.pay();
 
@@ -29,7 +35,7 @@ class OrderTest {
 
     @Test
     void cancelTransitionsCreatedOrderToCancelled() {
-        Order order = Order.newOrder("test@example.com");
+        Order order = newOrder();
 
         order.cancel();
 
@@ -38,7 +44,7 @@ class OrderTest {
 
     @Test
     void cannotCancelPaidOrder() {
-        Order order = Order.newOrder("test@example.com");
+        Order order = newOrder();
         order.pay();
 
         assertThatThrownBy(order::cancel)
@@ -49,7 +55,7 @@ class OrderTest {
 
     @Test
     void cannotPayCancelledOrder() {
-        Order order = Order.newOrder("test@example.com");
+        Order order = newOrder();
         order.cancel();
 
         assertThatThrownBy(order::pay)
@@ -58,7 +64,7 @@ class OrderTest {
 
     @Test
     void cannotPayOrderTwice() {
-        Order order = Order.newOrder("test@example.com");
+        Order order = newOrder();
         order.pay();
 
         assertThatThrownBy(order::pay)

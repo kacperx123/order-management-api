@@ -7,13 +7,17 @@ import com.example.order_management_api.event.model.OrderCancelledEvent;
 import com.example.order_management_api.event.model.OrderCreatedEvent;
 import com.example.order_management_api.event.model.OrderPaidEvent;
 import com.example.order_management_api.event.publisher.DomainEventPublisher;
+import com.example.order_management_api.exception.OrderAccessDeniedException;
 import com.example.order_management_api.exception.OrderNotFoundException;
 import com.example.order_management_api.mapper.OrderMapper;
 import com.example.order_management_api.model.Order;
 import com.example.order_management_api.model.OrderItem;
 import com.example.order_management_api.model.OrderStatus;
 import com.example.order_management_api.model.Product;
+import com.example.order_management_api.model.User;
 import com.example.order_management_api.repository.OrderRepository;
+import com.example.order_management_api.repository.UserRepository;
+import com.example.order_management_api.security.CurrentUser;
 import com.example.order_management_api.service.validation.OrderValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,13 +32,15 @@ public class OrderService {
 
     private final DomainEventPublisher domainEventPublisher;
     private final OrderRepository orderRepository;
+    private final UserRepository userRepository;
     private final OrderValidator orderValidator;
     private final InventoryService inventoryService;
     private final OrderMapper orderMapper;
 
     @Transactional
-    public OrderResponse createOrder(CreateOrderRequest request) {
-        Order order = Order.newOrder(request.customerEmail());
+    public OrderResponse createOrder(CreateOrderRequest request, CurrentUser currentUser) {
+        User user = userRepository.findById(currentUser.id()).orElseThrow();
+        Order order = Order.newOrder(user);
 
         for (CreateOrderItemRequest item : request.items()) {
             Product product = orderValidator.validateOrderable(item.productId());
@@ -57,8 +63,8 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
-    public OrderResponse getOrder(UUID id) {
-        return orderMapper.toResponse(findOrder(id));
+    public OrderResponse getOrder(UUID id, CurrentUser currentUser) {
+        return orderMapper.toResponse(findOrderAuthorized(id, currentUser));
     }
 
     @Transactional(readOnly = true)
@@ -72,9 +78,16 @@ public class OrderService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<OrderResponse> listMyOrders(CurrentUser currentUser) {
+        return orderRepository.findByUser_Id(currentUser.id()).stream()
+                .map(orderMapper::toResponse)
+                .toList();
+    }
+
     @Transactional
-    public OrderResponse payOrder(UUID id) {
-        Order order = findOrder(id);
+    public OrderResponse payOrder(UUID id, CurrentUser currentUser) {
+        Order order = findOrderAuthorized(id, currentUser);
 
         order.pay();
 
@@ -84,8 +97,8 @@ public class OrderService {
     }
 
     @Transactional
-    public OrderResponse cancelOrder(UUID id) {
-        Order order = findOrder(id);
+    public OrderResponse cancelOrder(UUID id, CurrentUser currentUser) {
+        Order order = findOrderAuthorized(id, currentUser);
 
         order.cancel();
 
@@ -98,8 +111,14 @@ public class OrderService {
         return orderMapper.toResponse(order);
     }
 
-    private Order findOrder(UUID id) {
-        return orderRepository.findById(id)
+    private Order findOrderAuthorized(UUID id, CurrentUser currentUser) {
+        Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new OrderNotFoundException(id));
+
+        if (!currentUser.isAdmin() && !order.isOwnedBy(currentUser.id())) {
+            throw new OrderAccessDeniedException(id);
+        }
+
+        return order;
     }
 }
