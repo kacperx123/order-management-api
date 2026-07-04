@@ -47,6 +47,29 @@ JUnit 5
 
 Testcontainers
 
+Angular 21 (frontend)
+
+## 🧩 Frontend Setup
+
+A separate Angular frontend lives in the `frontend/` folder. It is run independently from the Spring Boot backend.
+
+Start the backend:
+
+```bash
+./gradlew bootRun
+```
+
+Start the frontend:
+
+```bash
+cd frontend
+npm start
+```
+
+The frontend uses `frontend/proxy.conf.json` to forward API calls to `http://localhost:8080`.
+
+Sign in with the seeded admin account (`admin@example.com` / `admin123`, dev defaults from `application.properties`) or register a regular USER account via `POST /auth/register`. Admins get the full operations console (products, inventory, orders, outbox events); users see only their own orders.
+
 ## 📦 Domain Model
 
 ### Product

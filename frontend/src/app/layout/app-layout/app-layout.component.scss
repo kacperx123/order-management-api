@@ -1,0 +1,21 @@
+:host {
+  display: block;
+  height: 100vh;
+}
+
+.app-shell {
+  height: 100vh;
+  background: var(--ops-bg);
+}
+
+.app-sidenav {
+  width: 216px;
+  border-right: 1px solid var(--ops-border-soft) !important;
+  background: var(--ops-bg-deep) !important;
+}
+
+.page-content {
+  min-height: calc(100vh - 52px);
+  padding: 24px;
+  background: var(--ops-bg);
+}

@@ -1,0 +1,12 @@
+<mat-sidenav-container class="app-shell">
+  <mat-sidenav class="app-sidenav" mode="side" opened>
+    <app-sidebar></app-sidebar>
+  </mat-sidenav>
+
+  <mat-sidenav-content>
+    <app-topbar></app-topbar>
+    <main class="page-content">
+      <router-outlet></router-outlet>
+    </main>
+  </mat-sidenav-content>
+</mat-sidenav-container>

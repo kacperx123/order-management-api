@@ -1,0 +1,42 @@
+:host {
+  display: block;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 24px;
+  min-height: 52px;
+  background: var(--ops-bg);
+  color: var(--ops-text);
+  border-bottom: 1px solid var(--ops-border-soft);
+}
+
+.topbar-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.role-chip {
+  font-family: var(--ops-mono);
+  font-size: 11px;
+  color: var(--ops-accent);
+  background: var(--ops-accent-bg);
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.user-email {
+  font-size: 12.5px;
+  color: var(--ops-muted);
+}

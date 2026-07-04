@@ -1,0 +1,280 @@
+@use '@angular/material' as mat;
+
+/* =====================================================================
+   "Sterownia" - dark operations console theme
+   Deep slate surfaces, emerald accent, monospace for IDs and numbers.
+   ===================================================================== */
+
+html {
+  color-scheme: dark;
+
+  @include mat.theme((
+    color: (
+      primary: mat.$spring-green-palette,
+      tertiary: mat.$azure-palette,
+    ),
+    typography: (
+      plain-family: 'Inter, system-ui, sans-serif',
+      brand-family: 'Inter, system-ui, sans-serif',
+    ),
+    density: -1,
+  ));
+
+  /* Pin Material system surfaces to the ops palette */
+  --mat-sys-background: #0e1319;
+  --mat-sys-surface: #0e1319;
+  --mat-sys-surface-container-lowest: #0a0e13;
+  --mat-sys-surface-container-low: #10161d;
+  --mat-sys-surface-container: #131a22;
+  --mat-sys-surface-container-high: #161e27;
+  --mat-sys-surface-container-highest: #1a232d;
+  --mat-sys-on-surface: #e6edf3;
+  --mat-sys-on-surface-variant: #9daab8;
+  --mat-sys-outline: #2c3642;
+  --mat-sys-outline-variant: #1f2833;
+  --mat-sys-primary: #34d399;
+  --mat-sys-on-primary: #04120c;
+}
+
+/* App design tokens */
+:root {
+  --ops-bg: #0e1319;
+  --ops-bg-deep: #0a0e13;
+  --ops-panel: #131a22;
+  --ops-panel-raised: #161e27;
+  --ops-border: #1f2833;
+  --ops-border-soft: #1c242e;
+  --ops-text: #e6edf3;
+  --ops-text-dim: #c9d4df;
+  --ops-muted: #7d8896;
+  --ops-muted-deep: #5b6672;
+  --ops-id: #8fa3b8;
+
+  --ops-accent: #34d399;
+  --ops-accent-strong: #10b981;
+  --ops-accent-bg: #132018;
+  --ops-warn: #fbbf24;
+  --ops-warn-bg: #251d0d;
+  --ops-danger: #f87171;
+  --ops-danger-bg: #271315;
+  --ops-info: #60a5fa;
+  --ops-info-bg: #101c2c;
+
+  --ops-radius: 8px;
+  --ops-mono: 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Inter, system-ui, 'Helvetica Neue', Arial, sans-serif;
+  background: var(--ops-bg);
+  color: var(--ops-text);
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+}
+
+mat-sidenav-container {
+  height: 100vh;
+}
+
+.mono {
+  font-family: var(--ops-mono);
+  font-size: 0.92em;
+}
+
+/* Page scaffolding */
+.page-section {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.small-muted {
+  color: var(--ops-muted);
+  font-size: 0.9rem;
+}
+
+/* Panels and metric cards */
+.ops-panel {
+  background: var(--ops-panel);
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius);
+}
+
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  background: var(--ops-panel);
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius);
+  padding: 14px 16px;
+}
+
+.stat-card .stat-label {
+  color: var(--ops-muted);
+  font-size: 12px;
+}
+
+.stat-card .stat-value {
+  font-family: var(--ops-mono);
+  font-size: 26px;
+  color: var(--ops-text);
+  margin-top: 4px;
+}
+
+.stat-card .stat-value.warn { color: var(--ops-warn); }
+.stat-card .stat-value.ok { color: var(--ops-accent); }
+.stat-card .stat-value.danger { color: var(--ops-danger); }
+
+/* Tables (Material table overrides) */
+.mat-mdc-table,
+mat-table {
+  background: var(--ops-panel) !important;
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius);
+  overflow: hidden;
+}
+
+mat-header-row,
+.mat-mdc-header-row {
+  background: var(--ops-bg-deep) !important;
+  border-bottom: 1px solid var(--ops-border-soft) !important;
+  min-height: 42px !important;
+}
+
+mat-header-cell,
+.mat-mdc-header-cell {
+  color: var(--ops-muted) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+}
+
+mat-row,
+.mat-mdc-row {
+  border-bottom: 1px solid var(--ops-border-soft) !important;
+  min-height: 46px !important;
+}
+
+mat-row:last-of-type,
+.mat-mdc-row:last-of-type {
+  border-bottom: none !important;
+}
+
+mat-row:hover,
+.mat-mdc-row:hover {
+  background: var(--ops-panel-raised) !important;
+}
+
+mat-cell,
+.mat-mdc-cell {
+  color: var(--ops-text-dim) !important;
+  font-size: 13px !important;
+}
+
+.cell-id {
+  font-family: var(--ops-mono);
+  color: var(--ops-id) !important;
+  font-size: 12px !important;
+}
+
+.cell-number {
+  font-family: var(--ops-mono);
+}
+
+/* Status chips - dot + label, terminal style */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-family: var(--ops-mono);
+  padding: 3px 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.status-chip::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-chip.ok,
+.status-chip.active,
+.status-chip.paid,
+.status-chip.published {
+  color: var(--ops-accent);
+  background: var(--ops-accent-bg);
+}
+
+.status-chip.warn,
+.status-chip.created,
+.status-chip.pending,
+.status-chip.low {
+  color: var(--ops-warn);
+  background: var(--ops-warn-bg);
+}
+
+.status-chip.danger,
+.status-chip.cancelled,
+.status-chip.out {
+  color: var(--ops-danger);
+  background: var(--ops-danger-bg);
+}
+
+.status-chip.muted,
+.status-chip.inactive {
+  color: var(--ops-muted);
+  background: rgba(125, 136, 150, 0.1);
+}
+
+.table-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Dialogs */
+.mat-mdc-dialog-surface {
+  background: var(--ops-panel-raised) !important;
+  border: 1px solid var(--ops-border) !important;
+  border-radius: 10px !important;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2c3642;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}

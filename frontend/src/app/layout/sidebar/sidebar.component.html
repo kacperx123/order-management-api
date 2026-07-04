@@ -1,0 +1,20 @@
+<div class="sidebar-brand">
+  <div class="brand-icon">O</div>
+  <div>
+    <div class="brand-title">Order Ops</div>
+    <div class="brand-subtitle">operations console</div>
+  </div>
+</div>
+
+<nav class="sidebar-nav">
+  <a
+    *ngFor="let item of navLinks()"
+    class="nav-link"
+    [routerLink]="item.path"
+    routerLinkActive="active"
+    [routerLinkActiveOptions]="{ exact: true }"
+  >
+    <mat-icon>{{ item.icon }}</mat-icon>
+    <span>{{ item.label }}</span>
+  </a>
+</nav>

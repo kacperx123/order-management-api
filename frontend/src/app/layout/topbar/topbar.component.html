@@ -1,0 +1,13 @@
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="topbar-title">Order &amp; Inventory</span>
+  </div>
+
+  <div class="topbar-actions" *ngIf="auth.currentUser() as user">
+    <span class="role-chip">{{ user.role }}</span>
+    <span class="user-email">{{ user.email }}</span>
+    <button mat-icon-button matTooltip="Sign out" aria-label="Sign out" (click)="logout()">
+      <mat-icon>logout</mat-icon>
+    </button>
+  </div>
+</header>
