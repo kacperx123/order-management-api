@@ -1,307 +1,255 @@
+# Order & Inventory Management System
 
-# Order & Inventory Management API
+A production-style order & inventory platform: **Spring Boot 4 REST API** with transactional consistency, optimistic locking and event-driven architecture (Kafka + Outbox Pattern), fronted by an **Angular 21 dark operations console** with JWT auth and role-based views.
 
-A production-style Order & Inventory Management System built with Spring Boot.
-The project demonstrates transactional consistency, concurrency handling, and event-driven architecture using Kafka with the Outbox Pattern.
+![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4-6DB33F?logo=springboot&logoColor=white)
+![Angular](https://img.shields.io/badge/Angular-21-DD0031?logo=angular&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![Kafka](https://img.shields.io/badge/Apache%20Kafka-231F20?logo=apachekafka&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-60%20backend%20%2B%2010%20frontend-brightgreen)
 
-This is not a demo CRUD application — it models real-world order placement, inventory control, and asynchronous integrations.
+![Admin dashboard](docs/screenshots/admin-dashboard.png)
 
-## 📊 Order Process (BPMN) 
-### BPMN diagram illustrating how order request is processed. 
+## Table of Contents
 
-<img width="1212" height="1039" alt="image" src="docs/OrderRequestBPMNDiagram.PNG"/>
+- [Screenshots](#-screenshots)
+- [Key Features](#-key-features)
+- [Architecture](#-architecture)
+- [Order Flow](#-order-flow)
+- [Outbox Pattern & Kafka](#-outbox-pattern--kafka)
+- [Security](#-security)
+- [API Overview](#-api-overview)
+- [Concurrency & Consistency](#-concurrency--consistency)
+- [Error Handling](#-error-handling)
+- [Testing](#-testing)
+- [Frontend](#-frontend)
+- [Getting Started](#-getting-started)
+
+## 📸 Screenshots
+
+<table>
+  <tr>
+    <td align="center"><b>Products — catalog CRUD (ADMIN)</b></td>
+    <td align="center"><b>Inventory — stock & optimistic-lock version (ADMIN)</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/admin-products.png" alt="Products view"/></td>
+    <td><img src="docs/screenshots/admin-inventory.png" alt="Inventory view"/></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Outbox events — Kafka publish status (ADMIN)</b></td>
+    <td align="center"><b>Sign in / register</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/admin-events.png" alt="Outbox events view"/></td>
+    <td><img src="docs/screenshots/login.png" alt="Login screen"/></td>
+  </tr>
+  <tr>
+    <td align="center"><b>User dashboard (USER)</b></td>
+    <td align="center"><b>Catalog with live stock (USER)</b></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/user-home.png" alt="User dashboard"/></td>
+    <td><img src="docs/screenshots/user-catalog.png" alt="User catalog"/></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2"><b>My orders — pay / cancel own orders (USER)</b></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/user-my-orders.png" alt="My orders view"/></td>
+  </tr>
+</table>
 
 ## ✨ Key Features
 
-Product and inventory management
+- **Order lifecycle** with strict status transitions enforced in the domain model (`CREATED → PAID / CANCELLED`)
+- **Inventory consistency** under concurrency via optimistic locking (`@Version`)
+- **Transactional Outbox Pattern** — domain events persisted atomically with business data, published to Kafka by a background job (no lost events)
+- **JWT authentication** with `ADMIN` / `USER` roles; orders are owned by users
+- **Schema migrations** with Flyway (`ddl-auto=validate` — Hibernate never touches the schema)
+- **OpenAPI / Swagger UI** documentation
+- **Integration tests on real PostgreSQL** via Testcontainers — no in-memory database
+- **Angular 21 ops console** — zoneless change detection with signals, Material 3 dark theme, role-aware routing
 
-Order lifecycle with strict status transitions
+## 🏗 Architecture
 
-Inventory consistency with optimistic locking
+```mermaid
+flowchart LR
+    SPA["Angular 21 SPA<br/>(zoneless, signals)"]
 
-Transactional domain events with Outbox Pattern
+    subgraph API["Spring Boot 4"]
+        SEC["Spring Security<br/>JWT resource server"]
+        CTRL["REST controllers"]
+        SVC["Services, validators,<br/>rich domain model"]
+        JOB["Outbox publisher job<br/>(scheduled)"]
+    end
 
-Asynchronous event publishing via Kafka
+    DB[("PostgreSQL<br/>+ outbox_events")]
+    K["Kafka<br/>order-events / product-events"]
+    CONS["Demo consumer<br/>(billing / shipping / analytics)"]
 
-Clean error handling and integration tests with Testcontainers
-
-## 🛠️ Tech Stack
-
-Java 25
-
-Spring Boot 4
-
-Spring Web (REST API)
-
-Spring Data JPA (Hibernate)
-
-PostgreSQL
-
-Kafka (producer + consumer)
-
-Jackson (manual serialization for Outbox)
-
-Docker & Docker Compose
-
-JUnit 5
-
-Testcontainers
-
-Angular 21 (frontend)
-
-## 🧩 Frontend Setup
-
-A separate Angular frontend lives in the `frontend/` folder. It is run independently from the Spring Boot backend.
-
-Start the backend:
-
-```bash
-./gradlew bootRun
+    SPA -- "REST + Bearer JWT" --> SEC --> CTRL --> SVC
+    SVC -- "business data + events<br/>in one transaction" --> DB
+    JOB -- "poll unpublished" --> DB
+    JOB -- "publish" --> K --> CONS
 ```
 
-Start the frontend:
+BPMN view of the order request process:
 
-```bash
-cd frontend
-npm start
+<img width="1212" height="1039" alt="Order request BPMN diagram" src="docs/OrderRequestBPMNDiagram.PNG"/>
+
+## 🔄 Order Flow
+
+Placing an order runs in a **single transaction**: product validation, stock reservation, order persistence and the outbox event either all succeed or all roll back.
+
+```mermaid
+sequenceDiagram
+    actor U as User (JWT)
+    participant C as OrderController
+    participant S as OrderService
+    participant V as OrderValidator
+    participant I as InventoryService
+    participant DB as PostgreSQL
+
+    U->>C: POST /orders
+    C->>S: createOrder(request, currentUser)
+    note over S,DB: single @Transactional boundary
+    loop for each order item
+        S->>V: validateOrderable(productId)
+        V-->>S: Product (exists, active)
+        S->>I: reserve(productId, name, quantity)
+        alt insufficient stock
+            I--xS: OutOfStockException → 409, rollback
+        end
+    end
+    S->>DB: save Order + OrderItems (price snapshots)
+    S->>DB: insert OrderCreatedEvent into outbox_events
+    C-->>U: 201 Created
 ```
 
-The frontend uses `frontend/proxy.conf.json` to forward API calls to `http://localhost:8080`.
+Order status transitions are guarded by the domain model itself (`OrderStatus.canTransitionTo`), not by controller checks:
 
-Sign in with the seeded admin account (`admin@example.com` / `admin123`, dev defaults from `application.properties`) or register a regular USER account via `POST /auth/register`. Admins get the full operations console (products, inventory, orders, outbox events); users see only their own orders.
+```mermaid
+stateDiagram-v2
+    [*] --> CREATED : POST /orders — stock reserved
+    CREATED --> PAID : POST /orders/:id/pay
+    CREATED --> CANCELLED : POST /orders/:id/cancel — stock released
+    PAID --> [*]
+    CANCELLED --> [*]
+```
 
-## 📦 Domain Model
+Every transition persists a domain event (`OrderCreated`, `OrderPaid`, `OrderCancelled`) to the outbox in the same transaction. Order items snapshot the product name and unit price at purchase time, so later catalog edits never rewrite history.
 
-### Product
+## 📣 Outbox Pattern & Kafka
 
-Represents a sellable product.
+Publishing directly to Kafka inside a database transaction is unsafe — the send can succeed while the transaction rolls back (or vice versa). This project uses the **Transactional Outbox Pattern** instead:
 
-id (UUID)
+```mermaid
+flowchart LR
+    TX["Business transaction"] -- "1: insert event row (same tx)" --> OB[("outbox_events")]
+    JOB["Scheduled publisher"] -- "2: poll unpublished" --> OB
+    JOB -- "3: publish JSON, key = aggregateId" --> K["Kafka"]
+    JOB -- "4: mark publishedAt" --> OB
+```
 
-name
+- Events (`id`, `aggregateType`, `aggregateId`, `type`, `payloadJson`, `occurredAt`, `publishedAt`) are stored in the same transaction as the business change — **no lost events**.
+- A scheduled job publishes them to `order-events` / `product-events`, using `aggregateId` as the message key (per-aggregate ordering).
+- A demo consumer logs received events, standing in for downstream systems (billing, shipping, analytics).
+- Kafka is disabled in tests; outbox behavior is asserted directly against the database.
 
-price
+## 🔐 Security
 
-active
+- **JWT (HS256)** issued on login, validated by Spring Security's OAuth2 resource server
+- Passwords hashed with **BCrypt**
+- Two roles: `ADMIN` (operations console) and `USER` (own orders only)
+- **Ownership checks**: a user can read/pay/cancel only their own orders; admins see everything
+- Admin account is seeded on startup; regular users register themselves (dev credentials configurable in `application.properties`, override in production)
 
-### Inventory
+## 📖 API Overview
 
-Represents stock for a product (separate aggregate).
+Interactive documentation: **Swagger UI** at `http://localhost:8080/swagger-ui.html`.
 
-id (UUID)
+| Method | Endpoint | Access |
+|---|---|---|
+| POST | `/auth/register` | public |
+| POST | `/auth/login` | public |
+| GET | `/users/me` | authenticated |
+| GET | `/products` | public |
+| POST / PATCH | `/products`, `/products/{id}` | ADMIN |
+| POST | `/products/{id}/stock` | ADMIN |
+| GET | `/inventory` | ADMIN |
+| POST | `/orders` | authenticated |
+| GET | `/orders/my` | authenticated |
+| GET | `/orders` | ADMIN |
+| GET | `/orders/{id}` | owner or ADMIN |
+| POST | `/orders/{id}/pay`, `/orders/{id}/cancel` | owner or ADMIN |
+| GET | `/outbox-events` | ADMIN |
 
-productId
+## 🔒 Concurrency & Consistency
 
-available
+Inventory rows carry a `@Version` column (visible in the Inventory screenshot above). When two customers race for the last item:
 
-reserved
+- one transaction commits and takes the stock,
+- the other fails with **409 Conflict** (optimistic locking) instead of overselling.
 
-version (optimistic locking)
-
-### Order
-
-Represents a customer order.
-
-id (UUID)
-
-customerEmail
-
-status (CREATED, PAID, CANCELLED)
-
-createdAt
-
-items
-
-### OrderItem
-
-Snapshot of product data at purchase time.
-
-productId
-
-productNameSnapshot
-
-unitPriceAtPurchase
-
-quantity
-
-## 🔄 Order Flow (Business Logic)
-### 1. Create Product
-
-POST /products
-
-Creates Product
-
-Creates corresponding Inventory
-
-Emits:
-
-ProductCreatedEvent
-
-StockAdjustedEvent
-
-### 2. Place Order
-
-POST /orders
-
-Transactional flow:
-
-Validate product existence and active status
-
-Load inventory
-
-Verify sufficient stock
-
-Decrease inventory.available
-
-Create Order + OrderItem (with price snapshot)
-
-Persist everything in one transaction
-
-Persist OrderCreatedEvent in the Outbox
-
-If any step fails → transaction is rolled back.
-
-### 3. Pay Order
-
-POST /orders/{id}/pay
-
-Allowed transition:
-
-CREATED → PAID
-
-
-Updates order status
-
-Persists OrderPaidEvent in Outbox
-
-### 4. Cancel Order
-
-POST /orders/{id}/cancel
-
-Allowed transition:
-
-CREATED → CANCELLED
-
-
-Updates order status
-
-Persists OrderCancelledEvent in Outbox
+This behavior is verified by concurrent integration tests against real PostgreSQL.
 
 ## ⚠️ Error Handling
 
-The API returns consistent JSON error responses:
+The API returns consistent JSON errors:
 
+```json
 {
   "status": 409,
-  "message": "Out of stock for product ..."
+  "message": "Product Espresso Beans 1kg is out of stock for that request: requested = 21, available = 7."
 }
+```
 
+| Scenario | HTTP |
+|---|---|
+| Resource not found | 404 |
+| Validation error | 400 |
+| Invalid order status transition | 400 |
+| Out of stock / inactive product | 409 |
+| Optimistic locking conflict | 409 |
+| Email already registered | 409 |
+| Invalid credentials | 401 |
+| Accessing someone else's order | 403 |
 
-### Handled scenarios:
+## 🧪 Testing
 
-Scenario	HTTP
-Resource not found	404
-Validation error	400
-Invalid order status transition	400
-Out of stock / inactive product	409
-Optimistic locking conflict	409
-🔐 Concurrency & Consistency
-Optimistic Locking
+- **60 backend tests** — integration-first: real PostgreSQL via **Testcontainers** (singleton container), full HTTP → DB flows, concurrency scenarios, outbox assertions; no in-memory database
+- **10 frontend tests** (Vitest) — auth service and HTTP interceptor
+- Kafka is disabled in the test context to keep tests fast and deterministic
 
-Inventory updates use @Version to prevent race conditions.
+```bash
+./gradlew test          # backend
+cd frontend && npm test # frontend
+```
 
-### Scenario:
-Two users try to buy the last item.
+## 🖥 Frontend
 
-Result:
+Angular 21 single-page app in `frontend/`:
 
-One order succeeds
+- **Zoneless change detection** — all view state modeled with **signals** (`signal`/`computed`), the Angular 21 default
+- **Material 3 dark theme** — custom "operations console" look: monospace identifiers, terminal-style status chips, live event-stream panel
+- **Role-aware UI** — functional route guards + interceptor; admins get the full console, users get a personal dashboard, read-only catalog and their orders
+- Compact references (`ORD-CEA8F9`, `PRD-42A856`) instead of raw UUIDs across all tables
 
-One order fails with 409 Conflict
+## 🚀 Getting Started
 
-This behavior is verified with concurrent integration tests.
-
-## 📣 Domain Events & Outbox Pattern
-
-### Why Outbox?
-
-Publishing events directly to Kafka inside a transaction is unsafe.
-
-This project uses the Outbox Pattern:
-
-Domain events are persisted to the outbox_events table
-
-Persistence happens in the same transaction as business data
-
-A background job publishes events to Kafka
-
-Events are marked as published after successful send
-
-This guarantees no lost events.
-
-### 🧾 Outbox Event Structure
-
-id
-
-aggregateType (ORDER, PRODUCT)
-
-aggregateId
-
-type (OrderCreated, OrderPaid, etc.)
-
-payloadJson
-
-occurredAt
-
-publishedAt
-
-### 🛰️ Kafka Integration
-Topics
-
-order-events
-
-product-events
-
-Producer
-
-Reads unpublished outbox events
-
-Publishes JSON payloads to Kafka
-
-Uses aggregateId as message key
-
-Consumer
-
-A demo Kafka consumer logs received events and represents downstream systems such as:
-
-billing
-
-shipping
-
-analytics
-
-Kafka infrastructure is disabled in tests to keep them fast and deterministic.
-
-### 🧪 Testing Strategy
-
-Integration tests only
-
-No in-memory databases
-
-PostgreSQL via Testcontainers
-
-Kafka disabled in test context
-
-Outbox behavior verified directly via database assertions
-
-## 🐳 Running the Application
-
-### Start infrastructure
+```bash
+# 1. infrastructure (PostgreSQL, Kafka)
 docker compose up -d
 
-### Run the app
+# 2. backend — http://localhost:8080
 ./gradlew bootRun
 
-### 🧪 Run Tests
-./gradlew test
+# 3. frontend — http://localhost:4200
+cd frontend
+npm install
+npm start
+```
 
+Sign in with the seeded admin (`admin@example.com` / `admin123`, dev defaults) or create a `USER` account via the **Create one** link on the sign-in screen. The frontend proxies API calls to `:8080` (`frontend/proxy.conf.json`), so no CORS configuration is needed.
