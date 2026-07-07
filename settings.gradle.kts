@@ -1,1 +1,1 @@
-rootProject.name = "order-management-api"
+rootProject.name = "order-inventory-system"
