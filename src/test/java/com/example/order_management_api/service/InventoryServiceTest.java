@@ -55,7 +55,7 @@ class InventoryServiceTest {
     void reserveDecreasesAvailableStock() {
         UUID productId = givenInventory(10);
 
-        Inventory inventory = inventoryService.reserve(productId, 3);
+        Inventory inventory = inventoryService.reserve(productId, "Milk", 3);
 
         assertThat(inventory.getAvailable()).isEqualTo(7);
     }
@@ -64,7 +64,7 @@ class InventoryServiceTest {
     void reserveThrowsWhenNotEnoughStock() {
         UUID productId = givenInventory(1);
 
-        assertThatThrownBy(() -> inventoryService.reserve(productId, 2))
+        assertThatThrownBy(() -> inventoryService.reserve(productId, "Milk", 2))
                 .isInstanceOf(OutOfStockException.class);
     }
 
@@ -73,7 +73,7 @@ class InventoryServiceTest {
         UUID productId = UUID.randomUUID();
         when(inventoryRepository.findByProduct_Id(any())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> inventoryService.reserve(productId, 1))
+        assertThatThrownBy(() -> inventoryService.reserve(productId, "Milk", 1))
                 .isInstanceOf(ProductNotFoundException.class);
     }
 

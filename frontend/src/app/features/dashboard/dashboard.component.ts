@@ -5,6 +5,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
+import { ShortIdPipe } from '../../shared/pipes/short-id.pipe';
 import {
   InventoryApiService,
   OrderApiResponse,
@@ -32,7 +33,8 @@ interface DashboardStats {
     MatButtonModule,
     MatProgressSpinnerModule,
     RouterLink,
-    PageHeaderComponent
+    PageHeaderComponent,
+    ShortIdPipe
   ],
   template: `
     <section class="page-section page-dashboard">
@@ -91,7 +93,7 @@ interface DashboardStats {
               </thead>
               <tbody>
                 <tr *ngFor="let order of recentOrders()">
-                  <td class="mono id">{{ order.id.slice(0, 8) }}…</td>
+                  <td class="mono id">{{ order.id | shortId: 'ORD' }}</td>
                   <td class="ellipsis">{{ order.customerEmail }}</td>
                   <td><span class="status-chip" [ngClass]="order.status.toLowerCase()">{{ order.status }}</span></td>
                   <td class="mono num">{{ order.total | number: '1.2-2' }}</td>

@@ -7,6 +7,7 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
+import { ShortIdPipe } from '../../shared/pipes/short-id.pipe';
 import { InventoryApiResponse, InventoryApiService } from '../../shared/services/api.service';
 import { AdjustStockDialogComponent } from '../products/adjust-stock-dialog.component';
 
@@ -23,7 +24,8 @@ type InventoryRow = InventoryApiResponse & { stockStatus: 'IN STOCK' | 'LOW STOC
     MatDialogModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
-    PageHeaderComponent
+    PageHeaderComponent,
+    ShortIdPipe
   ],
   template: `
     <section class="page-section">
@@ -48,7 +50,7 @@ type InventoryRow = InventoryApiResponse & { stockStatus: 'IN STOCK' | 'LOW STOC
 
         <ng-container matColumnDef="productId">
           <mat-header-cell *matHeaderCellDef>Product id</mat-header-cell>
-          <mat-cell *matCellDef="let el" class="cell-id">{{ el.productId.slice(0, 8) }}…</mat-cell>
+          <mat-cell *matCellDef="let el" class="cell-id">{{ el.productId | shortId: 'PRD' }}</mat-cell>
         </ng-container>
 
         <ng-container matColumnDef="available">

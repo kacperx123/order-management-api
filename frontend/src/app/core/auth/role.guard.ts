@@ -14,6 +14,6 @@ export function roleGuard(required: Role): CanActivateFn {
     if (auth.role() === required) {
       return true;
     }
-    return router.createUrlTree([auth.isAdmin() ? '/dashboard' : '/my-orders']);
+    return router.createUrlTree([auth.isAdmin() ? '/dashboard' : '/home']);
   };
 }

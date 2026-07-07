@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AbstractControl, FormBuilder, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -8,9 +8,15 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { AuthService } from '../../core/auth/auth.service';
 
+function passwordsMatch(group: AbstractControl): ValidationErrors | null {
+  const password = group.get('password')?.value;
+  const confirm = group.get('confirm')?.value;
+  return password && confirm && password !== confirm ? { mismatch: true } : null;
+}
+
 @Component({
   standalone: true,
-  selector: 'app-login',
+  selector: 'app-register',
   imports: [
     CommonModule,
     ReactiveFormsModule,
@@ -27,7 +33,7 @@ import { AuthService } from '../../core/auth/auth.service';
           <div class="brand-icon">O</div>
           <div>
             <div class="brand-title">Order Ops</div>
-            <div class="brand-subtitle">operations console</div>
+            <div class="brand-subtitle">create your account</div>
           </div>
         </div>
 
@@ -35,13 +41,25 @@ import { AuthService } from '../../core/auth/auth.service';
           <mat-form-field appearance="outline" class="full">
             <mat-label>Email</mat-label>
             <input matInput formControlName="email" autocomplete="username" />
+            <mat-error *ngIf="form.controls.email.hasError('email')">Enter a valid email</mat-error>
           </mat-form-field>
 
           <mat-form-field appearance="outline" class="full">
             <mat-label>Password</mat-label>
-            <input matInput type="password" formControlName="password" autocomplete="current-password" />
+            <input matInput type="password" formControlName="password" autocomplete="new-password" />
+            <mat-error *ngIf="form.controls.password.hasError('minlength')">
+              At least 8 characters
+            </mat-error>
           </mat-form-field>
 
+          <mat-form-field appearance="outline" class="full">
+            <mat-label>Confirm password</mat-label>
+            <input matInput type="password" formControlName="confirm" autocomplete="new-password" />
+          </mat-form-field>
+
+          <div class="login-error" *ngIf="form.hasError('mismatch') && form.controls.confirm.touched">
+            Passwords do not match
+          </div>
           <div class="login-error" *ngIf="error()">{{ error() }}</div>
 
           <button
@@ -52,18 +70,13 @@ import { AuthService } from '../../core/auth/auth.service';
             [disabled]="loading()"
           >
             <mat-spinner diameter="18" *ngIf="loading()"></mat-spinner>
-            <span *ngIf="!loading()">Sign in</span>
+            <span *ngIf="!loading()">Create account</span>
           </button>
         </form>
 
         <div class="alt-action">
-          <span>No account yet?</span>
-          <a routerLink="/register">Create one</a>
-        </div>
-
-        <div class="dev-hint">
-          <span class="mono">admin&#64;example.com / admin123</span>
-          <span class="hint-label">dev credentials</span>
+          <span>Already have an account?</span>
+          <a routerLink="/login">Sign in</a>
         </div>
       </div>
     </div>
@@ -140,31 +153,22 @@ import { AuthService } from '../../core/auth/auth.service';
       }
       .alt-action a { color: var(--ops-accent); text-decoration: none; }
       .alt-action a:hover { text-decoration: underline; }
-      .dev-hint {
-        margin-top: 14px;
-        padding-top: 14px;
-        border-top: 1px solid var(--ops-border-soft);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 11.5px;
-        color: var(--ops-muted);
-      }
-      .hint-label {
-        color: var(--ops-muted-deep);
-      }
     `
   ]
 })
-export class LoginComponent {
+export class RegisterComponent {
   private readonly fb = inject(FormBuilder);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
 
-  form = this.fb.nonNullable.group({
-    email: ['', [Validators.required, Validators.email]],
-    password: ['', Validators.required]
-  });
+  form = this.fb.nonNullable.group(
+    {
+      email: ['', [Validators.required, Validators.email]],
+      password: ['', [Validators.required, Validators.minLength(8)]],
+      confirm: ['', Validators.required]
+    },
+    { validators: passwordsMatch }
+  );
 
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
@@ -180,13 +184,17 @@ export class LoginComponent {
 
     const { email, password } = this.form.getRawValue();
 
-    this.auth.login(email, password).subscribe({
+    this.auth.register(email, password).subscribe({
       next: (profile) => {
         void this.router.navigate([profile.role === 'ADMIN' ? '/dashboard' : '/home']);
       },
       error: (err) => {
         this.loading.set(false);
-        this.error.set(err?.status === 401 ? 'Invalid email or password' : 'Sign-in failed. Try again.');
+        this.error.set(
+          err?.status === 409
+            ? 'This email is already registered'
+            : 'Registration failed. Try again.'
+        );
       }
     });
   }

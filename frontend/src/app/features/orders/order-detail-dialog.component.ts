@@ -4,15 +4,16 @@ import { MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatDialogModule } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatListModule } from '@angular/material/list';
+import { ShortIdPipe } from '../../shared/pipes/short-id.pipe';
 
 @Component({
   standalone: true,
   selector: 'app-order-detail-dialog',
-  imports: [CommonModule, MatDialogModule, MatButtonModule, MatListModule],
+  imports: [CommonModule, MatDialogModule, MatButtonModule, MatListModule, ShortIdPipe],
   template: `
     <h2 mat-dialog-title>Order Details</h2>
     <div mat-dialog-content>
-      <p><strong>ID:</strong> {{data.id}}</p>
+      <p><strong>Ref:</strong> <span class="mono">{{ data.id | shortId: 'ORD' }}</span></p>
       <p><strong>Customer:</strong> {{data.customerEmail}}</p>
       <p><strong>Status:</strong> {{data.status}}</p>
 

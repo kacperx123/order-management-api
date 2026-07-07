@@ -5,6 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
+import { ShortIdPipe } from '../../shared/pipes/short-id.pipe';
 import { OrderApiResponse, OrderApiService } from '../../shared/services/api.service';
 import { NewOrderDialogComponent } from './new-order-dialog.component';
 
@@ -17,7 +18,8 @@ import { NewOrderDialogComponent } from './new-order-dialog.component';
     MatButtonModule,
     MatDialogModule,
     MatProgressSpinnerModule,
-    PageHeaderComponent
+    PageHeaderComponent,
+    ShortIdPipe
   ],
   template: `
     <section class="page-section">
@@ -39,7 +41,7 @@ import { NewOrderDialogComponent } from './new-order-dialog.component';
       <mat-table [dataSource]="data()" *ngIf="!loading() && data().length > 0">
         <ng-container matColumnDef="id">
           <mat-header-cell *matHeaderCellDef>Order</mat-header-cell>
-          <mat-cell *matCellDef="let el" class="cell-id">{{ el.id.slice(0, 8) }}…</mat-cell>
+          <mat-cell *matCellDef="let el" class="cell-id">{{ el.id | shortId: 'ORD' }}</mat-cell>
         </ng-container>
 
         <ng-container matColumnDef="items">

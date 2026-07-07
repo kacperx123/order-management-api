@@ -7,6 +7,7 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
+import { ShortIdPipe } from '../../shared/pipes/short-id.pipe';
 import { OrderDetailDialogComponent } from './order-detail-dialog.component';
 import { ConfirmActionDialogComponent } from './confirm-action-dialog.component';
 import { OrderApiResponse, OrderApiService } from '../../shared/services/api.service';
@@ -24,7 +25,8 @@ type OrderRow = OrderApiResponse & { total: number };
     MatDialogModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
-    PageHeaderComponent
+    PageHeaderComponent,
+    ShortIdPipe
   ],
   template: `
     <section class="page-section">
@@ -56,7 +58,7 @@ type OrderRow = OrderApiResponse & { total: number };
       <mat-table [dataSource]="orders()" *ngIf="!loading() && !error()">
         <ng-container matColumnDef="id">
           <mat-header-cell *matHeaderCellDef>Order</mat-header-cell>
-          <mat-cell *matCellDef="let o" class="cell-id">{{ o.id.slice(0, 8) }}…</mat-cell>
+          <mat-cell *matCellDef="let o" class="cell-id">{{ o.id | shortId: 'ORD' }}</mat-cell>
         </ng-container>
 
         <ng-container matColumnDef="customer">

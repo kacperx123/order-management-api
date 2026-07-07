@@ -15,11 +15,14 @@ const ADMIN_LINKS: NavLink[] = [
   { path: '/products', label: 'Products', icon: 'inventory_2' },
   { path: '/inventory', label: 'Inventory', icon: 'warehouse' },
   { path: '/orders', label: 'Orders', icon: 'shopping_cart' },
-  { path: '/outbox-events', label: 'Events', icon: 'sensors' }
+  { path: '/outbox-events', label: 'Events', icon: 'sensors' },
+  { path: '/my-orders', label: 'My orders', icon: 'receipt_long' }
 ];
 
 const USER_LINKS: NavLink[] = [
-  { path: '/my-orders', label: 'My orders', icon: 'shopping_cart' }
+  { path: '/home', label: 'Dashboard', icon: 'space_dashboard' },
+  { path: '/catalog', label: 'Catalog', icon: 'inventory_2' },
+  { path: '/my-orders', label: 'My orders', icon: 'receipt_long' }
 ];
 
 @Component({

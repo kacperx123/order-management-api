@@ -7,6 +7,7 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
+import { ShortIdPipe } from '../../shared/pipes/short-id.pipe';
 import { EventPayloadDialogComponent } from './event-payload-dialog.component';
 import { OutboxApiService, OutboxEventApiResponse } from '../../shared/services/api.service';
 
@@ -23,7 +24,8 @@ type EventRow = OutboxEventApiResponse & { payload: unknown; status: 'PUBLISHED'
     MatDialogModule,
     MatProgressSpinnerModule,
     MatTooltipModule,
-    PageHeaderComponent
+    PageHeaderComponent,
+    ShortIdPipe
   ],
   template: `
     <section class="page-section">
@@ -67,7 +69,7 @@ type EventRow = OutboxEventApiResponse & { payload: unknown; status: 'PUBLISHED'
           <mat-header-cell *matHeaderCellDef>Aggregate</mat-header-cell>
           <mat-cell *matCellDef="let e">
             <span>{{ e.aggregateType }}</span>
-            <span class="cell-id agg-id">{{ e.aggregateId.slice(0, 8) }}…</span>
+            <span class="cell-id agg-id">{{ e.aggregateId | shortId }}</span>
           </mat-cell>
         </ng-container>
 

@@ -44,7 +44,7 @@ public class OrderService {
 
         for (CreateOrderItemRequest item : request.items()) {
             Product product = orderValidator.validateOrderable(item.productId());
-            inventoryService.reserve(item.productId(), item.quantity());
+            inventoryService.reserve(item.productId(), product.getName(), item.quantity());
 
             order.addItem(new OrderItem(
                     product.getId(),

@@ -25,12 +25,12 @@ public class InventoryService {
     private final DomainEventPublisher domainEventPublisher;
     private final SimulatedProcessingDelay simulatedProcessingDelay;
 
-    public Inventory reserve(UUID productId, int quantity) {
+    public Inventory reserve(UUID productId, String productName, int quantity) {
         Inventory inventory = getInventory(productId);
 
         int available = inventory.getAvailable();
         if (available < quantity) {
-            throw new OutOfStockException(productId, quantity, available);
+            throw new OutOfStockException(productName, quantity, available);
         }
 
         inventory.setAvailable(available - quantity);

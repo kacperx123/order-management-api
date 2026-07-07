@@ -50,6 +50,13 @@ export class AuthService {
     return this.token !== null;
   }
 
+  /** Registers a new USER account, then logs in with the same credentials. */
+  register(email: string, password: string): Observable<UserProfile> {
+    return this.http
+      .post<UserProfile>('/auth/register', { email, password })
+      .pipe(switchMap(() => this.login(email, password)));
+  }
+
   /** Logs in, stores the JWT, then resolves the user profile (role comes from /users/me). */
   login(email: string, password: string): Observable<UserProfile> {
     return this.http.post<TokenResponse>('/auth/login', { email, password }).pipe(
